@@ -77,7 +77,7 @@ T-05 训练作业管理与状态持久化（FE/BE）
 - 依赖：T-03
 - 优先级：高
 - 预计耗时：FE 12h，BE 20h
-- 状态：未开始
+- 状态：已完成
 - 负责人：Owner-FE Jonathan | Owner-BE Jonathan
 
 T-06 推理服务与前端集成（FE/BE）

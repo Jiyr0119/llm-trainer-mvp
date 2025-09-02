@@ -21,6 +21,8 @@ class TrainingJob(SQLModel, table=True):
     epochs: int = 3
     learning_rate: float = 2e-5
     batch_size: int = 8
+    progress: float = 0.0  # 训练进度，0-100
+    log_file: Optional[str] = None  # 日志文件路径
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 

@@ -1,23 +1,45 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import FileResponse, JSONResponse
+import pandas as pd
 import os
 import json
-from typing import List, Optional, Dict, Any, Union
-import torch
-from transformers import BertTokenizer, BertForSequenceClassification, AdamW
-from torch.utils.data import DataLoader, Dataset
-import pandas as pd
 import shutil
+import logging
 from datetime import datetime
+from typing import List, Optional
+from sqlmodel import Session, select
+from transformers import BertTokenizer, BertForSequenceClassification, AdamW
+from torch.utils.data import Dataset, DataLoader
+import torch
 
-from app.db import init_db, get_session
-from app.models import Dataset as DatasetORM, TrainingJob as TrainingJobORM
-from sqlmodel import select, desc
+from models import DatasetORM, TrainingJobORM, ModelArtifactORM, get_session, init_db
 
-app = FastAPI(title="LLM Trainer MVP", description="MVP版本的大语言模型训练平台")
+# 配置日志
+LOG_PATH = "../data/logs"
+os.makedirs(LOG_PATH, exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("../data/training.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("llm-trainer")
 
-# 添加CORS中间件
+# 定义路径
+UPLOAD_PATH = "../data/uploads"
+MODEL_PATH = "../data/models"
+
+# 确保目录存在
+os.makedirs(UPLOAD_PATH, exist_ok=True)
+os.makedirs(MODEL_PATH, exist_ok=True)
+
+# 初始化FastAPI应用
+app = FastAPI()
+
+# 配置CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,30 +48,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 路径与目录
-MODEL_PATH = "../data/models"
-# 创建数据目录
-os.makedirs(MODEL_PATH, exist_ok=True)
-
-# 初始化数据库（ORM）
+# 初始化数据库
 init_db()
 
-# 统一API响应格式
-class APIResponse(BaseModel):
-    code: int
-    message: str
-    data: Optional[Dict[str, Any]] = None
+# API响应模型
+class APIResponse:
+    @staticmethod
+    def success(data=None, message="操作成功"):
+        return {"success": True, "message": message, "data": data}
+    
+    @staticmethod
+    def error(message="操作失败", status_code=400):
+        return JSONResponse(
+            status_code=status_code,
+            content={"success": False, "message": message}
+        )
 
 # 数据模型
-class DatasetInfo(BaseModel):
-    name: str
-    file_path: str
+class DatasetInfo:
+    def __init__(self, id, name, file_path, created_at):
+        self.id = id
+        self.name = name
+        self.file_path = file_path
+        self.created_at = created_at
 
-class TrainingRequest(BaseModel):
-    dataset_id: int
-    epochs: int = 3
-    learning_rate: float = 2e-5
-    batch_size: int = 8
+class TrainingRequest:
+    def __init__(self, dataset_id: int, epochs: int = 3, learning_rate: float = 2e-5, batch_size: int = 16):
+        self.dataset_id = dataset_id
+        self.epochs = epochs
+        self.learning_rate = learning_rate
+        self.batch_size = batch_size
 
 class PredictionRequest(BaseModel):
     text: str
@@ -403,6 +431,400 @@ async def preview_dataset(dataset_id: int, limit: int = 10):
             data=None
         )
 
+# 训练函数，将在后台运行
+async def train_model_task(job_id: int, dataset_id: int, epochs: int, learning_rate: float, batch_size: int):
+    try:
+        # 获取数据集信息
+        with get_session() as session:
+            dataset = session.get(DatasetORM, dataset_id)
+            if not dataset:
+                logger.error(f"数据集不存在: {dataset_id}")
+                update_job_status(job_id, "failed", error_message="数据集不存在")
+                return
+            
+            # 更新任务状态为运行中
+            job = session.get(TrainingJobORM, job_id)
+            job.status = "running"
+            job.started_at = datetime.utcnow()
+            session.add(job)
+            session.commit()
+        
+        # 创建日志文件
+        log_file = f"{LOG_PATH}/training_job_{job_id}_{int(datetime.now().timestamp())}.log"
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        job_logger = logging.getLogger(f"job_{job_id}")
+        job_logger.addHandler(file_handler)
+        job_logger.setLevel(logging.INFO)
+        
+        # 更新日志文件路径
+        with get_session() as session:
+            job = session.get(TrainingJobORM, job_id)
+            job.log_file = log_file
+            session.add(job)
+            session.commit()
+        
+        # 加载数据集
+        job_logger.info(f"加载数据集: {dataset.file_path}")
+        df = pd.read_csv(dataset.file_path)
+        
+        # 检查数据集格式
+        if 'text' not in df.columns or 'label' not in df.columns:
+            error_msg = "数据集必须包含'text'和'label'列"
+            job_logger.error(error_msg)
+            update_job_status(job_id, "failed", error_message=error_msg)
+            return
+        
+        # 准备数据
+        texts = df['text'].tolist()
+        labels = df['label'].tolist()
+        
+        # 初始化tokenizer和模型
+        job_logger.info("初始化tokenizer和模型")
+        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=len(set(labels)))
+        
+        # 准备数据集
+        class TextDataset(Dataset):
+            def __init__(self, texts, labels, tokenizer, max_length=128):
+                self.encodings = tokenizer(texts, truncation=True, padding=True, max_length=max_length, return_tensors='pt')
+                self.labels = torch.tensor(labels, dtype=torch.long)
+            
+            def __getitem__(self, idx):
+                item = {key: val[idx] for key, val in self.encodings.items()}
+                item['labels'] = self.labels[idx]
+                return item
+            
+            def __len__(self):
+                return len(self.labels)
+        
+        dataset = TextDataset(texts, labels, tokenizer)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        
+        # 设置优化器
+        optimizer = AdamW(model.parameters(), lr=learning_rate)
+        
+        # 训练模型
+        job_logger.info(f"开始训练，共{epochs}轮")
+        total_steps = epochs * len(dataloader)
+        current_step = 0
+        
+        for epoch in range(epochs):
+            job_logger.info(f"开始第{epoch+1}轮训练")
+            for batch in dataloader:
+                # 检查任务是否被停止
+                with get_session() as session:
+                    job = session.get(TrainingJobORM, job_id)
+                    if job.status == "stopped":
+                        job_logger.info("训练任务已被手动停止")
+                        return
+                
+                # 前向传播和反向传播
+                optimizer.zero_grad()
+                input_ids = batch['input_ids']
+                attention_mask = batch['attention_mask']
+                labels = batch['labels']
+                
+                outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
+                loss = outputs.loss
+                
+                job_logger.info(f"Epoch {epoch+1}/{epochs}, Loss: {loss.item():.4f}")
+                
+                loss.backward()
+                optimizer.step()
+                
+                # 更新进度
+                current_step += 1
+                progress = (current_step / total_steps) * 100
+                
+                # 每10步更新一次进度
+                if current_step % 10 == 0 or current_step == total_steps:
+                    with get_session() as session:
+                        job = session.get(TrainingJobORM, job_id)
+                        job.progress = progress
+                        session.add(job)
+                        session.commit()
+        
+        # 保存模型
+        model_save_path = f"{MODEL_PATH}/model_{dataset_id}_{job_id}_{int(datetime.now().timestamp())}"
+        job_logger.info(f"保存模型到: {model_save_path}")
+        model.save_pretrained(model_save_path)
+        tokenizer.save_pretrained(model_save_path)
+        
+        # 更新训练任务状态为成功
+        update_job_status(job_id, "succeeded", model_path=model_save_path)
+        job_logger.info("训练完成")
+        
+    except Exception as e:
+        error_message = str(e)
+        logger.error(f"训练失败: {error_message}")
+        update_job_status(job_id, "failed", error_message=error_message)
+
+# 更新任务状态的辅助函数
+def update_job_status(job_id: int, status: str, model_path: str = None, error_message: str = None):
+    with get_session() as session:
+        job = session.get(TrainingJobORM, job_id)
+        if not job:
+            logger.error(f"找不到训练任务: {job_id}")
+            return
+        
+        job.status = status
+        job.completed_at = datetime.utcnow()
+        
+        if model_path:
+            job.model_name = model_path
+        
+        if status == "succeeded":
+            job.progress = 100.0
+        
+        session.add(job)
+        session.commit()
+        
+        # 记录错误信息到日志文件
+        if error_message and job.log_file:
+            with open(job.log_file, "a") as f:
+                f.write(f"\n[ERROR] {datetime.now()} - {error_message}\n")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
+
+
+class PredictionRequest:
+    def __init__(self, model_id: int, text: str):
+        self.model_id = model_id
+        self.text = text
+
+# 数据集上传接口
+@app.post("/api/datasets/upload")
+async def upload_dataset(file: UploadFile = File(...)):
+    try:
+        # 检查文件类型
+        if not file.filename.endswith('.csv'):
+            return APIResponse.error("只支持CSV文件格式")
+        
+        # 保存文件
+        file_path = f"{UPLOAD_PATH}/{file.filename}"
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # 验证CSV格式
+        try:
+            df = pd.read_csv(file_path)
+            if 'text' not in df.columns or 'label' not in df.columns:
+                os.remove(file_path)  # 删除不符合要求的文件
+                return APIResponse.error("CSV文件必须包含'text'和'label'列")
+        except Exception as e:
+            os.remove(file_path)  # 删除无法解析的文件
+            return APIResponse.error(f"CSV文件解析失败: {str(e)}")
+        
+        # 保存到数据库
+        with get_session() as session:
+            dataset = DatasetORM(name=file.filename, file_path=file_path)
+            session.add(dataset)
+            session.commit()
+            session.refresh(dataset)
+        
+        return APIResponse.success(
+            {"id": dataset.id, "name": dataset.name, "file_path": dataset.file_path},
+            "数据集上传成功"
+        )
+    except Exception as e:
+        logger.error(f"数据集上传失败: {str(e)}")
+        return APIResponse.error(f"数据集上传失败: {str(e)}")
+
+# 获取数据集列表
+@app.get("/api/datasets")
+async def get_datasets():
+    try:
+        with get_session() as session:
+            statement = select(DatasetORM)
+            results = session.exec(statement).all()
+            datasets = [
+                {"id": ds.id, "name": ds.name, "file_path": ds.file_path, "created_at": ds.created_at}
+                for ds in results
+            ]
+        return APIResponse.success(datasets, "获取数据集列表成功")
+    except Exception as e:
+        logger.error(f"获取数据集列表失败: {str(e)}")
+        return APIResponse.error(f"获取数据集列表失败: {str(e)}")
+
+# 获取数据集预览
+@app.get("/api/datasets/{dataset_id}/preview")
+async def preview_dataset(dataset_id: int, limit: int = Query(10, ge=1, le=100)):
+    try:
+        with get_session() as session:
+            dataset = session.get(DatasetORM, dataset_id)
+            if not dataset:
+                return APIResponse.error("数据集不存在", 404)
+            
+            # 读取CSV文件并返回前N行
+            df = pd.read_csv(dataset.file_path)
+            preview_data = df.head(limit).to_dict(orient='records')
+            
+            return APIResponse.success({
+                "dataset": {"id": dataset.id, "name": dataset.name},
+                "preview": preview_data,
+                "total_rows": len(df),
+                "columns": df.columns.tolist()
+            }, "获取数据集预览成功")
+    except Exception as e:
+        logger.error(f"获取数据集预览失败: {str(e)}")
+        return APIResponse.error(f"获取数据集预览失败: {str(e)}")
+
+# 启动训练接口
+@app.post("/api/train/start")
+async def start_training(request: dict, background_tasks: BackgroundTasks):
+    try:
+        # 解析请求参数
+        training_request = TrainingRequest(
+            dataset_id=request.get("dataset_id"),
+            epochs=request.get("epochs", 3),
+            learning_rate=request.get("learning_rate", 2e-5),
+            batch_size=request.get("batch_size", 16)
+        )
+        
+        # 验证数据集是否存在
+        with get_session() as session:
+            dataset = session.get(DatasetORM, training_request.dataset_id)
+            if not dataset:
+                return APIResponse.error("数据集不存在", 404)
+            
+            # 创建训练任务记录
+            job = TrainingJobORM(
+                dataset_id=training_request.dataset_id,
+                status="pending",
+                epochs=training_request.epochs,
+                learning_rate=training_request.learning_rate,
+                batch_size=training_request.batch_size,
+                progress=0.0
+            )
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+            
+            # 启动后台训练任务
+            background_tasks.add_task(
+                train_model_task,
+                job_id=job.id,
+                dataset_id=training_request.dataset_id,
+                epochs=training_request.epochs,
+                learning_rate=training_request.learning_rate,
+                batch_size=training_request.batch_size
+            )
+            
+            return APIResponse.success(
+                {"job_id": job.id, "status": job.status},
+                "训练任务已提交"
+            )
+    except Exception as e:
+        logger.error(f"启动训练失败: {str(e)}")
+        return APIResponse.error(f"启动训练失败: {str(e)}")
+
+# 获取训练状态
+@app.get("/api/train/status/{job_id}")
+async def get_training_status(job_id: int):
+    try:
+        with get_session() as session:
+            job = session.get(TrainingJobORM, job_id)
+            if not job:
+                return APIResponse.error("训练任务不存在", 404)
+            
+            # 构建响应数据
+            response_data = {
+                "job_id": job.id,
+                "dataset_id": job.dataset_id,
+                "status": job.status,
+                "progress": job.progress,
+                "started_at": job.started_at,
+                "completed_at": job.completed_at,
+                "model_name": job.model_name
+            }
+            
+            # 如果有日志文件，读取最新的日志内容
+            if job.log_file and os.path.exists(job.log_file):
+                with open(job.log_file, "r") as f:
+                    # 读取最后20行日志
+                    log_lines = f.readlines()
+                    response_data["logs"] = log_lines[-20:] if len(log_lines) > 20 else log_lines
+            
+            return APIResponse.success(response_data, "获取训练状态成功")
+    except Exception as e:
+        logger.error(f"获取训练状态失败: {str(e)}")
+        return APIResponse.error(f"获取训练状态失败: {str(e)}")
+
+# 停止训练
+@app.post("/api/train/stop")
+async def stop_training(request: dict):
+    try:
+        job_id = request.get("job_id")
+        if not job_id:
+            return APIResponse.error("缺少job_id参数")
+        
+        with get_session() as session:
+            job = session.get(TrainingJobORM, job_id)
+            if not job:
+                return APIResponse.error("训练任务不存在", 404)
+            
+            # 只有处于pending或running状态的任务才能被停止
+            if job.status not in ["pending", "running"]:
+                return APIResponse.error(f"无法停止状态为{job.status}的任务")
+            
+            # 更新任务状态为stopped
+            job.status = "stopped"
+            job.completed_at = datetime.utcnow()
+            session.add(job)
+            session.commit()
+            
+            return APIResponse.success({"job_id": job.id, "status": job.status}, "训练任务已停止")
+    except Exception as e:
+        logger.error(f"停止训练失败: {str(e)}")
+        return APIResponse.error(f"停止训练失败: {str(e)}")
+
+# 获取训练日志
+@app.get("/api/train/logs/{job_id}")
+async def get_training_logs(job_id: int, lines: int = Query(50, ge=1, le=1000)):
+    try:
+        with get_session() as session:
+            job = session.get(TrainingJobORM, job_id)
+            if not job:
+                return APIResponse.error("训练任务不存在", 404)
+            
+            if not job.log_file or not os.path.exists(job.log_file):
+                return APIResponse.error("日志文件不存在", 404)
+            
+            # 读取指定行数的日志
+            with open(job.log_file, "r") as f:
+                log_content = f.readlines()
+                # 返回最后N行
+                logs = log_content[-lines:] if len(log_content) > lines else log_content
+            
+            return APIResponse.success({"logs": logs}, "获取训练日志成功")
+    except Exception as e:
+        logger.error(f"获取训练日志失败: {str(e)}")
+        return APIResponse.error(f"获取训练日志失败: {str(e)}")
+
+# 获取所有训练任务
+@app.get("/api/train/jobs")
+async def get_training_jobs():
+    try:
+        with get_session() as session:
+            statement = select(TrainingJobORM).order_by(TrainingJobORM.id.desc())
+            results = session.exec(statement).all()
+            jobs = [
+                {
+                    "id": job.id,
+                    "dataset_id": job.dataset_id,
+                    "status": job.status,
+                    "progress": job.progress,
+                    "started_at": job.started_at,
+                    "completed_at": job.completed_at,
+                    "model_name": job.model_name
+                }
+                for job in results
+            ]
+            return APIResponse.success(jobs, "获取训练任务列表成功")
+    except Exception as e:
+        logger.error(f"获取训练任务列表失败: {str(e)}")
+        return APIResponse.error(f"获取训练任务列表失败: {str(e)}")

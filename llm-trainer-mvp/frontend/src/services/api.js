@@ -6,7 +6,7 @@ const datasetService = {
   uploadDataset(file) {
     const formData = new FormData()
     formData.append('file', file)
-    return axiosInstance.post('/upload', formData, {
+    return axiosInstance.post('/api/datasets/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
@@ -15,12 +15,12 @@ const datasetService = {
   
   // 获取所有数据集
   getDatasets() {
-    return axiosInstance.get('/datasets')
+    return axiosInstance.get('/api/datasets')
   },
 
   // 获取数据集预览
   getDatasetPreview(datasetId, limit = 10) {
-    return axiosInstance.get(`/dataset/preview/${datasetId}?limit=${limit}`)
+    return axiosInstance.get(`/api/datasets/${datasetId}/preview?limit=${limit}`)
   }
 }
 
@@ -28,26 +28,38 @@ const datasetService = {
 const trainingService = {
   // 开始训练
   startTraining(trainingParams) {
-    return axiosInstance.post('/train', trainingParams)
+    return axiosInstance.post('/api/train/start', trainingParams)
   },
   
   // 获取训练状态
   getTrainingStatus(jobId) {
-    const url = jobId ? `/train/status/${jobId}` : '/train/status'
-    return axiosInstance.get(url)
+    if (!jobId) {
+      throw new Error('需要提供job_id参数')
+    }
+    return axiosInstance.get(`/api/train/status/${jobId}`)
   },
   
   // 停止训练
   stopTraining(jobId) {
-    return axiosInstance.post(`/train/stop`, { job_id: jobId })
+    return axiosInstance.post('/api/train/stop', { job_id: jobId })
+  },
+
+  // 获取训练日志
+  getTrainingLogs(jobId, lines = 50) {
+    return axiosInstance.get(`/api/train/logs/${jobId}?lines=${lines}`)
+  },
+
+  // 获取所有训练任务
+  getTrainingJobs() {
+    return axiosInstance.get('/api/train/jobs')
   }
 }
 
 // 预测服务
 const predictionService = {
   // 文本分类预测
-  predict(text) {
-    return axiosInstance.post('/predict', { text })
+  predict(modelId, text) {
+    return axiosInstance.post('/api/predict', { model_id: modelId, text })
   }
 }
 
