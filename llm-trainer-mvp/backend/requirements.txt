@@ -1,7 +1,12 @@
-fastapi==0.68.0
-uvicorn==0.15.0
+fastapi==0.110.0
+uvicorn==0.29.0
 torch==2.2.2
 transformers==4.37.2
 pandas==2.2.2
 numpy==1.26.4
 python-multipart==0.0.9
+sqlalchemy==2.0.30
+sqlmodel==0.0.21
+pydantic==2.7.0
+pydantic-settings==2.2.1
+# psycopg2-binary 可选，如未来切换Postgres再加入

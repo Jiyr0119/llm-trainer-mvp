@@ -37,17 +37,9 @@
             </el-form-item>
             
             <el-form-item>
-              <el-button 
-                type="primary" 
-                @click="startTraining" 
-                :loading="training"
-                :disabled="!trainingForm.dataset_id"
-              >
-                {{ training ? '训练中...' : '开始训练' }}
-              </el-button>
-              <el-button @click="checkStatus" style="margin-left: 10px;">
-                刷新状态
-              </el-button>
+              <el-button type="primary" @click="startTraining" :loading="training">开始训练</el-button>
+              <el-button @click="checkStatus">检查状态</el-button>
+              <el-button type="danger" @click="stopTraining" :disabled="!currentJobId">停止训练</el-button>
             </el-form-item>
           </el-form>
         </div>
@@ -88,24 +80,31 @@ export default {
     return {
       datasets: [],
       trainingForm: {
-        dataset_id: null,
+        dataset_id: '',
         epochs: 3,
         learning_rate: 2e-5,
         batch_size: 8
       },
       training: false,
       statusMessage: '',
-      statusType: 'info'
+      statusType: 'info',
+      currentJobId: null
     }
   },
   async mounted() {
     await this.loadDatasets()
+    
+    // 检查URL参数中是否有datasetId
+    const datasetId = this.$route.query.datasetId
+    if (datasetId) {
+      this.trainingForm.dataset_id = parseInt(datasetId, 10)
+    }
   },
   methods: {
     async loadDatasets() {
       try {
         const response = await datasetService.getDatasets()
-        this.datasets = response.data
+        this.datasets = response.data.datasets || response.data
       } catch (error) {
         console.error('Load datasets error:', error)
         this.$message.error('加载数据集失败')
@@ -124,26 +123,63 @@ export default {
       try {
         const response = await trainingService.startTraining(this.trainingForm)
         console.log('Training response:', response.data)
-        this.statusMessage = response.data.message
-        this.statusType = response.data.status === 'completed' ? 'success' : 'warning'
+        
+        // 处理新的响应格式
+        const status = response.data.status || 'unknown'
+        this.statusMessage = response.data.message || '训练状态更新'
+        this.statusType = status === 'completed' ? 'success' : 'warning'
+        
+        // 保存当前训练任务ID
+        if (response.data.job_id) {
+          this.currentJobId = response.data.job_id
+        }
       } catch (error) {
         console.error('Training error:', error)
-        this.statusMessage = '训练失败: ' + (error.response?.data?.detail || error.message)
+        this.statusMessage = '训练失败: ' + (error.message || '未知错误')
         this.statusType = 'error'
       } finally {
         this.training = false
       }
     },
+    async stopTraining() {
+      if (!this.currentJobId) {
+        this.$message.warning('没有正在进行的训练任务')
+        return
+      }
+      
+      try {
+        const response = await trainingService.stopTraining(this.currentJobId)
+        console.log('Stop training response:', response.data)
+        
+        // 处理新的响应格式
+        const status = response.data.status || 'unknown'
+        this.statusMessage = response.data.message || '训练已停止'
+        this.statusType = status === 'stopped' ? 'success' : 'warning'
+      } catch (error) {
+        console.error('Stop training error:', error)
+        this.$message.error('停止训练失败: ' + (error.message || '未知错误'))
+      }
+    },
     async checkStatus() {
       try {
         const response = await trainingService.getTrainingStatus()
-        this.statusMessage = response.data.message
-        this.statusType = response.data.status === 'ready' ? 'success' : 'info'
+        console.log('Status response:', response.data)
+        
+        // 处理新的响应格式
+        const status = response.data.status || 'unknown'
+        this.statusMessage = response.data.message || '获取状态成功'
+        this.statusType = status === 'completed' ? 'success' : 'info'
+        
+        // 更新当前训练任务ID
+        if (response.data.job_id) {
+          this.currentJobId = response.data.job_id
+        }
       } catch (error) {
         console.error('Status check error:', error)
-        this.$message.error('获取状态失败')
+        this.statusMessage = '获取状态失败: ' + (error.message || '未知错误')
+        this.statusType = 'error'
       }
-    }
+    },
   }
 }
 </script>

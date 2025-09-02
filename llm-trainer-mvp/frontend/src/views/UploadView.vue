@@ -42,9 +42,14 @@
             description="数据集已成功上传，可以开始训练了。"
             show-icon
           />
-          <el-button type="success" @click="goToTraining" style="margin-top: 15px;">
-            前往训练页面
-          </el-button>
+          <div class="action-buttons">
+            <el-button type="success" @click="goToDatasets" style="margin-right: 10px;">
+              查看数据集列表
+            </el-button>
+            <el-button type="primary" @click="goToTraining">
+              前往训练页面
+            </el-button>
+          </div>
         </div>
       </div>
     </el-card>
@@ -112,13 +117,16 @@ export default {
         this.$message.success('数据集上传成功')
       } catch (error) {
         console.error('Upload error:', error)
-        this.$message.error('上传失败: ' + (error.response?.data?.detail || error.message))
+        this.$message.error('上传失败: ' + (error.message || '未知错误'))
       } finally {
         this.uploading = false
       }
     },
     goToTraining() {
       this.$router.push('/train')
+    },
+    goToDatasets() {
+      this.$router.push('/datasets')
     }
   }
 }
@@ -143,6 +151,12 @@ export default {
 .success-message {
   margin-top: 20px;
   text-align: center;
+}
+
+.action-buttons {
+  margin-top: 15px;
+  display: flex;
+  justify-content: center;
 }
 
 .format-info pre {

@@ -1,40 +1,58 @@
-import axios from 'axios'
+import axiosInstance from './axios'
 
-const API_BASE = '/api'
-
-export const datasetService = {
+// 数据集服务
+const datasetService = {
   // 上传数据集
-  async uploadDataset(file) {
+  uploadDataset(file) {
     const formData = new FormData()
     formData.append('file', file)
-    return axios.post(`${API_BASE}/upload`, formData, {
+    return axiosInstance.post('/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
       }
     })
   },
   
-  // 获取数据集列表
-  async getDatasets() {
-    return axios.get(`${API_BASE}/datasets`)
+  // 获取所有数据集
+  getDatasets() {
+    return axiosInstance.get('/datasets')
+  },
+
+  // 获取数据集预览
+  getDatasetPreview(datasetId, limit = 10) {
+    return axiosInstance.get(`/dataset/preview/${datasetId}?limit=${limit}`)
   }
 }
 
-export const trainingService = {
+// 训练服务
+const trainingService = {
   // 开始训练
-  async startTraining(trainingRequest) {
-    return axios.post(`${API_BASE}/train`, trainingRequest)
+  startTraining(trainingParams) {
+    return axiosInstance.post('/train', trainingParams)
   },
   
   // 获取训练状态
-  async getTrainingStatus() {
-    return axios.get(`${API_BASE}/train/status`)
+  getTrainingStatus(jobId) {
+    const url = jobId ? `/train/status/${jobId}` : '/train/status'
+    return axiosInstance.get(url)
+  },
+  
+  // 停止训练
+  stopTraining(jobId) {
+    return axiosInstance.post(`/train/stop`, { job_id: jobId })
   }
 }
 
-export const predictionService = {
-  // 模型预测
-  async predict(text) {
-    return axios.post(`${API_BASE}/predict`, { text })
+// 预测服务
+const predictionService = {
+  // 文本分类预测
+  predict(text) {
+    return axiosInstance.post('/predict', { text })
   }
+}
+
+export {
+  datasetService,
+  trainingService,
+  predictionService
 }

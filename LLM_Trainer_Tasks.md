@@ -1,0 +1,202 @@
+# 项目任务与进度跟踪文档（LLM Trainer MVP）
+
+目的：基于《LLM_Trainer_MVP.md》将目标拆解为可执行任务，提供跨前后端的一体化计划、状态与问题跟踪机制。
+
+—
+
+1. 使用与约定
+- 状态枚举：未开始 | 进行中 | 已完成 | 阻塞
+- 优先级：高 | 中 | 低
+- 时间单位：h（小时）/ d（天），均为工作量预估（不含等待/评审时间）
+- 统一更新流程：
+  - 修改任务状态/耗时 → 在“9. 进度更新”追加一条记录 → 若遇阻，在“10. 问题记录与处理”登记
+- 负责人命名：Owner-FE / Owner-BE（默认：Jonathan，可后续调整）
+
+—
+
+2. 任务总览与依赖
+- 依赖关系（箭头表示依赖于）：
+  - T-02 → T-01
+  - T-03 → T-02
+  - T-04 → T-03
+  - T-05 → T-03
+  - T-06 → T-03, T-05
+  - T-07 → T-02
+  - T-08 → T-02
+  - T-09 → T-02, T-03, T-05
+  - T-10 → T-06, T-07, T-08, T-09
+
+—
+
+3. 任务清单（每项含前后端内容）
+
+T-01 项目基线初始化（FE/BE）
+- 目标：前端基础工程（Vue3+Vite+ElementPlus+Router）；后端 FastAPI 骨架与健康检查
+- 前端：项目结构、路由/导航、代理配置、基础页面可达
+- 后端：FastAPI 启动、根路由/健康检查、基础依赖安装
+- 依赖：无
+- 优先级：高
+- 预计耗时：FE 8h，BE 6h
+- 状态：已完成
+- 负责人：Owner-FE Jonathan | Owner-BE Jonathan
+
+T-02 API 基线与契约（FE/BE）
+- 目标：对外接口定义与Schema统一，形成稳定契约
+- 前端：统一 axios 封装（baseURL、拦截器、错误处理）、服务方法签名与Mock对齐
+- 后端：Pydantic 模型（请求/响应）、OpenAPI 示例、接口原型（/upload, /train, /train/status, /train/stop, /predict）
+- 依赖：T-01
+- 优先级：高
+- 预计耗时：FE 8h，BE 12h
+- 状态：已完成
+- 负责人：Owner-FE Jonathan | Owner-BE Jonathan
+
+T-03 数据库接入与数据模型（FE/BE）
+- 目标：SQLite + ORM（SQLModel/SQLAlchemy），完成 Dataset/TrainingJob/ModelArtifact 模型与仓储
+- 前端：数据列表/详情展示（datasets/jobs），错误与加载态处理
+- 后端：ORM 初始化、迁移（可选 Alembic）、Repository 层与会话管理
+- 依赖：T-02
+- 优先级：高
+- 预计耗时：FE 8h，BE 16h
+- 状态：已完成
+- 负责人：Owner-FE Jonathan | Owner-BE Jonathan
+
+T-04 上传与数据集管理（FE/BE）
+- 目标：CSV 上传、校验、持久化与列表/预览
+- 前端：上传表单与进度、结果提示、列表页与分页筛选
+- 后端：multipart 处理、存储策略、校验与错误码、查询接口（分页/过滤）
+- 依赖：T-03
+- 优先级：高
+- 预计耗时：FE 10h，BE 12h
+- 状态：未开始
+- 负责人：Owner-FE Jonathan | Owner-BE Jonathan
+
+T-05 训练作业管理与状态持久化（FE/BE）
+- 目标：训练参数、启动/停止、状态轮询、日志采集与持久化
+- 前端：训练面板（参数表单、进度条、日志区域）、轮询与取消
+- 后端：背景任务（BackgroundTasks/Celery 二选一）、状态机（Pending/Running/Succeeded/Failed/Stopped）、日志落盘与查询
+- 依赖：T-03
+- 优先级：高
+- 预计耗时：FE 12h，BE 20h
+- 状态：未开始
+- 负责人：Owner-FE Jonathan | Owner-BE Jonathan
+
+T-06 推理服务与前端集成（FE/BE）
+- 目标：选择小模型/Mock → 接通真实推理 → 前端输入/结果展示
+- 前端：推理输入表单、loading/错误提示与结果区域、历史记录（可选）
+- 后端：/predict 接口实现、模型加载与缓存、超时与并发保护
+- 依赖：T-03, T-05
+- 优先级：中
+- 预计耗时：FE 8h，BE 12h
+- 状态：未开始
+- 负责人：Owner-FE Jonathan | Owner-BE Jonathan
+
+T-07 统一异常与日志（FE/BE）
+- 目标：统一响应结构与错误码，前端统一提示；后端标准化日志
+- 前端：错误拦截、全局提示（Message/Notification）、错误页面（404/500）
+- 后端：异常处理中间件、业务错误码、结构化日志（json）与请求跟踪ID
+- 依赖：T-02
+- 优先级：中
+- 预计耗时：FE 6h，BE 10h
+- 状态：未开始
+- 负责人：Owner-FE Jonathan | Owner-BE Jonathan
+
+T-08 配置管理与环境切换（FE/BE）
+- 目标：.env 与 pydantic Settings；前端多环境（dev/prod/test）构建与代理
+- 前端：.env.*、构建变量、代理与构建脚本调整
+- 后端：Settings 类、环境变量加载、敏感信息管理
+- 依赖：T-02
+- 优先级：中
+- 预计耗时：FE 4h，BE 6h
+- 状态：未开始
+- 负责人：Owner-FE Jonathan | Owner-BE Jonathan
+
+T-09 测试与CI（FE/BE）
+- 目标：单元/接口测试基线与CI流水线（GitHub Actions）
+- 前端：组件/服务单测、基本覆盖率阈值（>=70%）
+- 后端：pytest + httpx 接口测试、覆盖率与报告、pre-commit（可选）
+- 依赖：T-02, T-03, T-05
+- 优先级：中
+- 预计耗时：FE 10h，BE 12h
+- 状态：未开始
+- 负责人：Owner-FE Jonathan | Owner-BE Jonathan
+
+T-10 部署与运行手册（FE/BE）
+- 目标：生产可运行说明与脚本；打包与服务配置
+- 前端：生产构建与静态资源部署说明
+- 后端：gunicorn + uvicorn workers 配置、启动脚本、健康检查与监控探针
+- 依赖：T-06, T-07, T-08, T-09
+- 优先级：低
+- 预计耗时：FE 4h，BE 8h
+- 状态：未开始
+- 负责人：Owner-FE Jonathan | Owner-BE Jonathan
+
+—
+
+4. 状态跟踪与度量
+- 单任务状态：按"未开始/进行中/已完成/阻塞"维护
+- 里程碑进度：
+  - M0 初始化：T-01（100%）
+  - M1 API 基线：T-02（已完成）
+  - M2 数据库与模型：T-03（已完成）
+  - M3 训练作业：T-05（未开始）
+  - M4 推理联通：T-06（未开始）
+  - M5 质量与CI：T-07, T-08, T-09（未开始）
+  - M6 部署交付：T-10（未开始）
+- 时间跟踪：每次更新记录"消耗时长/剩余预估"，用于滚动修正估时
+
+—
+
+5. 负责人与沟通机制
+- 默认负责人：Owner-FE Jonathan | Owner-BE Jonathan
+- 评审节奏：
+  - 日常：站会更新“9. 进度更新”
+  - 里程碑：完成后做一次复盘，沉淀至“10. 问题记录与处理/经验”
+
+—
+
+6. 验收与质量门槛（Definition of Done）
+- 代码：通过 lint 与基础测试；关键路径覆盖率达标
+- 文档：接口示例与README更新；任务状态/变更日志已维护
+- 运行：本地可启动端到端流程；如涉及部署，需提供可复现步骤
+
+—
+
+7. 风险与依赖项管理
+- 关键依赖：PyTorch/Transformers 版本、NumPy 兼容、python-multipart、前后端端口与代理
+- 典型风险：本地资源不足、长时任务阻塞、依赖下载失败、IPv6 回环解析
+- 处理策略：小模型优先、异步/后台任务、镜像源与缓存、代理目标使用 127.0.0.1
+
+—
+
+8. 模板（便于快速登记）
+- 任务快速卡片：
+  - 标题：
+  - 目标：
+  - 前端工作：
+  - 后端工作：
+  - 依赖：
+  - 优先级：高/中/低
+  - 预计耗时：FE Xh，BE Yh
+  - 状态：未开始/进行中/已完成/阻塞
+  - 负责人：Owner-FE ，Owner-BE 
+  - 备注：
+
+—
+
+9. 进度更新（持续追加，倒序）
+- [PU-2025-09-03-002] 完成T-02 API基线与契约任务，包括前端统一axios封装（baseURL、拦截器、错误处理）、后端实现/train/stop接口以及前端停止训练功能。
+- [PU-2025-09-03-001] 完成T-03数据库接入与数据模型任务，包括SQLite+SQLModel ORM配置、Dataset/TrainingJob/ModelArtifact模型定义、数据库会话管理以及前端数据展示功能。
+- [PU-2025-09-02-001] 初始化任务板，基于 MVP 文档生成跨前后端任务清单与依赖；同步当前实际状态（T-01 完成，T-02 进行中）。
+
+—
+
+10. 问题记录与处理（Issue Log）
+- [IS-001] 代理 ECONNREFUSED ::1:8000 → 已通过 127.0.0.1 修复（根因：IPv6 回环解析）
+- [IS-002] FastAPI 上传缺少 python-multipart → 安装依赖后恢复
+- [IS-003] vue-router 模块解析失败 → 安装 vue-router@^4 并修正视图导入路径
+
+—
+
+11. 附：对齐 MVP 的范围
+- 与《LLM_Trainer_MVP.md》目标一致：上传→训练→推理→可视化与控制
+- 本文档将范围映射到可执行任务，并为每个任务提供 FE/BE 双侧拆解、依赖关系、优先级与时间预估

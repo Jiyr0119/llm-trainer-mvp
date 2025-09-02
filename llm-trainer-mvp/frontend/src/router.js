@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from './views/HomeView.vue'
 import UploadView from './views/UploadView.vue'
+import DatasetsView from './views/DatasetsView.vue'
 import TrainingView from './views/TrainingView.vue'
 import PredictionView from './views/PredictionView.vue'
 
@@ -14,6 +15,11 @@ const routes = [
     path: '/upload',
     name: 'upload',
     component: UploadView
+  },
+  {
+    path: '/datasets',
+    name: 'datasets',
+    component: DatasetsView
   },
   {
     path: '/train',

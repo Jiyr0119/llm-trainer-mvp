@@ -8,6 +8,7 @@
     >
       <el-menu-item index="/">首页</el-menu-item>
       <el-menu-item index="/upload">数据上传</el-menu-item>
+      <el-menu-item index="/datasets">数据集管理</el-menu-item>
       <el-menu-item index="/train">模型训练</el-menu-item>
       <el-menu-item index="/predict">模型推理</el-menu-item>
     </el-menu>
