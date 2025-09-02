@@ -1,10 +1,9 @@
 <template>
   <div class="navigation">
     <el-menu
-      :default-active="activeIndex"
+      :default-active="$route.path"
       class="el-menu-demo"
       mode="horizontal"
-      @select="handleSelect"
       router
     >
       <el-menu-item index="/">首页</el-menu-item>
@@ -17,17 +16,7 @@
 
 <script>
 export default {
-  name: 'Navigation',
-  data() {
-    return {
-      activeIndex: '/'
-    }
-  },
-  methods: {
-    handleSelect(key) {
-      this.activeIndex = key
-    }
-  }
+  name: 'Navigation'
 }
 </script>
 
