@@ -7,11 +7,13 @@ import json
 import shutil
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
 from sqlmodel import Session, select
 from transformers import BertTokenizer, BertForSequenceClassification, AdamW
 from torch.utils.data import Dataset, DataLoader
 import torch
+import time
+from pydantic import BaseModel
 
 from models import DatasetORM, TrainingJobORM, ModelArtifactORM, get_session, init_db
 
@@ -51,6 +53,9 @@ app.add_middleware(
 # 初始化数据库
 init_db()
 
+# 模型缓存
+model_cache = {}
+
 # API响应模型
 class APIResponse:
     @staticmethod
@@ -81,6 +86,7 @@ class TrainingRequest:
 
 class PredictionRequest(BaseModel):
     text: str
+    model_id: Optional[int] = None
 
 class TrainingStatus(BaseModel):
     status: str
@@ -117,18 +123,18 @@ class TextDataset(Dataset):
         }
 
 # 加载模型和分词器
-def load_model_and_tokenizer():
+def load_model_and_tokenizer(model_path=None):
     model_name = 'bert-base-chinese'
     try:
         # 尝试从本地加载模型
-        local_model_path = os.path.join(MODEL_PATH, model_name)
+        local_model_path = model_path or os.path.join(MODEL_PATH, model_name)
         if os.path.exists(local_model_path):
-            print(f"从本地加载模型: {local_model_path}")
+            logger.info(f"从本地加载模型: {local_model_path}")
             tokenizer = BertTokenizer.from_pretrained(local_model_path)
             model = BertForSequenceClassification.from_pretrained(local_model_path, num_labels=2)
         else:
             # 从Hugging Face下载模型
-            print(f"从Hugging Face下载模型: {model_name}")
+            logger.info(f"从Hugging Face下载模型: {model_name}")
             tokenizer = BertTokenizer.from_pretrained(model_name)
             model = BertForSequenceClassification.from_pretrained(model_name, num_labels=2)
             
@@ -136,17 +142,114 @@ def load_model_and_tokenizer():
             os.makedirs(local_model_path, exist_ok=True)
             tokenizer.save_pretrained(local_model_path)
             model.save_pretrained(local_model_path)
-            print(f"模型已保存到本地: {local_model_path}")
+            logger.info(f"模型已保存到本地: {local_model_path}")
             
         return model, tokenizer
     except Exception as e:
-        print(f"加载模型失败: {str(e)}")
+        logger.error(f"加载模型失败: {str(e)}")
         raise Exception(f"无法加载 '{model_name}' 的分词器。如果您尝试从 `https://huggingface.co/models` 加载，请确保本地不存在同名目录。否则，请确认 '{model_name}' 是正确的路径，且该目录包含 BertTokenizer 分词器所需的所有相关文件。")
+
+# 获取模型（带缓存）
+def get_model(model_id=None):
+    # 如果指定了model_id，尝试加载特定模型
+    if model_id:
+        # 检查缓存
+        if model_id in model_cache:
+            logger.info(f"从缓存加载模型 ID: {model_id}")
+            return model_cache[model_id]
+        
+        # 从数据库获取模型信息
+        with get_session() as session:
+            model_artifact = session.get(ModelArtifactORM, model_id)
+            if not model_artifact:
+                raise Exception(f"模型ID {model_id} 不存在")
+            
+            # 检查模型文件是否存在
+            if not os.path.exists(model_artifact.model_path):
+                raise Exception(f"模型文件不存在: {model_artifact.model_path}")
+            
+            # 加载模型
+            model, tokenizer = load_model_and_tokenizer(model_artifact.model_path)
+            model_cache[model_id] = (model, tokenizer)
+            return model, tokenizer
+    
+    # 如果没有指定model_id，加载最新的模型
+    with get_session() as session:
+        # 查询最新的成功训练的模型
+        statement = select(ModelArtifactORM).order_by(ModelArtifactORM.id.desc()).limit(1)
+        result = session.exec(statement).first()
+        
+        if not result:
+            # 如果没有训练好的模型，加载默认模型
+            logger.info("没有找到训练好的模型，加载默认模型")
+            model, tokenizer = load_model_and_tokenizer()
+            return model, tokenizer
+        
+        # 检查缓存
+        if result.id in model_cache:
+            logger.info(f"从缓存加载最新模型 ID: {result.id}")
+            return model_cache[result.id]
+        
+        # 加载模型
+        logger.info(f"加载最新模型 ID: {result.id}, 路径: {result.model_path}")
+        model, tokenizer = load_model_and_tokenizer(result.model_path)
+        model_cache[result.id] = (model, tokenizer)
+        return model, tokenizer
 
 # API路由
 @app.get("/", response_model=APIResponse)
 async def root():
     return APIResponse(code=200, message="成功", data={"message": "LLM Trainer MVP API"})
+
+# 推理接口
+@app.post("/api/predict")
+async def predict(request: PredictionRequest):
+    start_time = time.time()
+    try:
+        # 参数验证
+        if not request.text or len(request.text.strip()) == 0:
+            return APIResponse.error("请提供有效的文本")
+        
+        # 加载模型和分词器
+        try:
+            model, tokenizer = get_model(request.model_id)
+        except Exception as e:
+            logger.error(f"加载模型失败: {str(e)}")
+            return APIResponse.error(f"加载模型失败: {str(e)}")
+        
+        # 设置为评估模式
+        model.eval()
+        
+        # 对输入文本进行编码
+        inputs = tokenizer(
+            request.text,
+            truncation=True,
+            padding='max_length',
+            max_length=128,
+            return_tensors='pt'
+        )
+        
+        # 执行推理
+        with torch.no_grad():
+            outputs = model(**inputs)
+            logits = outputs.logits
+            probabilities = torch.nn.functional.softmax(logits, dim=1)
+            predicted_class = torch.argmax(probabilities, dim=1).item()
+            confidence = probabilities[0][predicted_class].item()
+        
+        # 构建响应
+        class_names = ["负面", "正面"]
+        result = {
+            "text": request.text,
+            "predicted_class": class_names[predicted_class],
+            "confidence": confidence,
+            "processing_time": time.time() - start_time
+        }
+        
+        return APIResponse.success(result, "预测成功")
+    except Exception as e:
+        logger.error(f"预测失败: {str(e)}")
+        return APIResponse.error(f"预测失败: {str(e)}")
 
 @app.post("/upload", response_model=APIResponse)
 async def upload_dataset(file: UploadFile = File(...)):

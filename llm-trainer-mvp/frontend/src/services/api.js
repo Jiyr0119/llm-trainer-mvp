@@ -58,8 +58,12 @@ const trainingService = {
 // 预测服务
 const predictionService = {
   // 文本分类预测
-  predict(modelId, text) {
-    return axiosInstance.post('/api/predict', { model_id: modelId, text })
+  predict(text, modelId = null) {
+    const payload = { text }
+    if (modelId) {
+      payload.model_id = modelId
+    }
+    return axiosInstance.post('/api/predict', payload)
   }
 }
 
