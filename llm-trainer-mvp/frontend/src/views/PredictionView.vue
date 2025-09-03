@@ -197,8 +197,9 @@ export default {
     async loadTrainedModels() {
       try {
         const response = await trainingService.getTrainingJobs()
-        // 只显示训练成功的模型
-        this.trainedModels = response.data.filter(job => job.status === 'completed')
+        // 现在handleResponse已经统一处理了响应格式，直接使用返回的数组
+        const jobs = Array.isArray(response) ? response : []
+        this.trainedModels = jobs.filter(job => job.status === 'completed')
       } catch (error) {
         console.error('Failed to load trained models:', error)
         this.$message.error('加载模型列表失败')

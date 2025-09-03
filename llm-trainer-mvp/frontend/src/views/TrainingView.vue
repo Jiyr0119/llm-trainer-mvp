@@ -188,7 +188,7 @@ export default {
     async loadDatasets() {
       try {
         const response = await datasetService.getDatasets()
-        // 确保datasets是一个数组
+        // 现在handleResponse已经统一处理了响应格式，直接使用返回的数组
         this.datasets = Array.isArray(response) ? response : []
       } catch (error) {
         console.error('Load datasets error:', error)
@@ -199,7 +199,7 @@ export default {
     async loadTrainingJobs() {
       try {
         const response = await trainingService.getTrainingJobs()
-        // 确保trainingJobs是一个数组
+        // 现在handleResponse已经统一处理了响应格式，直接使用返回的数组
         this.trainingJobs = Array.isArray(response) ? response : []
       } catch (error) {
         console.error('Load training jobs error:', error)

@@ -3,22 +3,21 @@ import axiosInstance from './axios';
 // 统一处理API响应
 const handleResponse = (promise) => {
   return promise.then(response => {
-    // 检查响应是否成功
-    // 后端返回的数据格式统一为 { success: true, code: 200, message: "...", data: {...} }
-    // 但axios拦截器已经提取了response.data，所以这里直接处理
-    if (response.success === undefined) {
-      // 如果没有success字段，说明axios拦截器已经提取了data部分
-      return response;
-    } else if (response.success) {
+    // 后端统一返回格式：{ success: true, code: 200, message: "...", data: [...] }
+    if (response && response.success === true) {
+      // 成功响应，返回data部分
       return response.data;
-    } else {
-      // 如果API返回失败但没有抛出异常，手动创建一个错误对象
+    } else if (response && response.success === false) {
+      // 失败响应，抛出错误
       return Promise.reject({
         success: false,
         message: response.message || '操作失败',
         code: response.code || 'UNKNOWN_ERROR',
         data: response.data
       });
+    } else {
+      // 兼容其他格式（如果axios拦截器已经处理过）
+      return response;
     }
   });
 };

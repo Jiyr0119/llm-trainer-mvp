@@ -87,6 +87,7 @@ export default {
       try {
         const response = await datasetService.getDatasets();
         console.log('response', response);
+        // 现在handleResponse已经统一处理了响应格式，直接使用返回的数组
         this.datasets = response || [];
       } catch (error) {
         console.error('Failed to fetch datasets:', error);
@@ -103,7 +104,8 @@ export default {
 
       try {
         const response = await datasetService.getDatasetPreview(datasetId);
-        this.previewData = response.data.preview || response.data || [];
+        // 处理后端返回的数据格式：{data: {preview: Array}} 或 {data: Array} 或直接是数组
+        this.previewData = response.data?.preview || response.data || response || [];
       } catch (error) {
         console.error('Failed to preview dataset:', error);
         this.$message.error('获取数据集预览失败: ' + (error.message || '未知错误'));
