@@ -9,19 +9,19 @@
           </el-button>
         </div>
       </template>
-      
+
       <div class="content">
         <div v-if="loading" class="loading-container">
           <el-skeleton :rows="5" animated />
         </div>
-        
+
         <div v-else-if="datasets.length === 0" class="empty-data">
           <el-empty description="暂无数据集" />
           <el-button type="primary" @click="$router.push('/upload')">
             上传数据集
           </el-button>
         </div>
-        
+
         <div v-else>
           <el-table :data="datasets" style="width: 100%" border>
             <el-table-column prop="id" label="ID" width="80" />
@@ -33,18 +33,10 @@
             </el-table-column>
             <el-table-column label="操作" width="220">
               <template #default="scope">
-                <el-button 
-                  type="primary" 
-                  size="small" 
-                  @click="previewDataset(scope.row.id)"
-                >
+                <el-button type="primary" size="small" @click="previewDataset(scope.row.id)">
                   预览
                 </el-button>
-                <el-button 
-                  type="success" 
-                  size="small" 
-                  @click="goToTraining(scope.row.id)"
-                >
+                <el-button type="success" size="small" @click="goToTraining(scope.row.id)">
                   训练
                 </el-button>
               </template>
@@ -53,13 +45,9 @@
         </div>
       </div>
     </el-card>
-    
+
     <!-- 数据集预览对话框 -->
-    <el-dialog
-      v-model="previewDialogVisible"
-      title="数据集预览"
-      width="70%"
-    >
+    <el-dialog v-model="previewDialogVisible" title="数据集预览" width="70%">
       <div v-if="previewLoading" class="preview-loading">
         <el-skeleton :rows="5" animated />
       </div>
@@ -76,7 +64,7 @@
 </template>
 
 <script>
-import { datasetService } from '../services/api'
+import { datasetService } from '../services/api';
 
 export default {
   name: 'DatasetsView',
@@ -88,53 +76,54 @@ export default {
       previewLoading: false,
       previewData: [],
       currentDatasetId: null
-    }
+    };
   },
   created() {
-    this.fetchDatasets()
+    this.fetchDatasets();
   },
   methods: {
     async fetchDatasets() {
-      this.loading = true
+      this.loading = true;
       try {
-        const response = await datasetService.getDatasets()
-        this.datasets = response.data.datasets || response.data || []
+        const response = await datasetService.getDatasets();
+        console.log('response', response);
+        this.datasets = response || [];
       } catch (error) {
-        console.error('Failed to fetch datasets:', error)
-        this.$message.error('获取数据集列表失败: ' + (error.message || '未知错误'))
+        console.error('Failed to fetch datasets:', error);
+        this.$message.error('获取数据集列表失败: ' + (error.message || '未知错误'));
       } finally {
-        this.loading = false
+        this.loading = false;
       }
     },
     async previewDataset(datasetId) {
-      this.currentDatasetId = datasetId
-      this.previewDialogVisible = true
-      this.previewLoading = true
-      this.previewData = []
-      
+      this.currentDatasetId = datasetId;
+      this.previewDialogVisible = true;
+      this.previewLoading = true;
+      this.previewData = [];
+
       try {
-        const response = await datasetService.getDatasetPreview(datasetId)
-        this.previewData = response.data.preview || response.data || []
+        const response = await datasetService.getDatasetPreview(datasetId);
+        this.previewData = response.data.preview || response.data || [];
       } catch (error) {
-        console.error('Failed to preview dataset:', error)
-        this.$message.error('获取数据集预览失败: ' + (error.message || '未知错误'))
+        console.error('Failed to preview dataset:', error);
+        this.$message.error('获取数据集预览失败: ' + (error.message || '未知错误'));
       } finally {
-        this.previewLoading = false
+        this.previewLoading = false;
       }
     },
     goToTraining(datasetId) {
       this.$router.push({
         path: '/train',
         query: { datasetId }
-      })
+      });
     },
     formatDate(dateString) {
-      if (!dateString) return ''
-      const date = new Date(dateString)
-      return date.toLocaleString()
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      return date.toLocaleString();
     }
   }
-}
+};
 </script>
 
 <style scoped>

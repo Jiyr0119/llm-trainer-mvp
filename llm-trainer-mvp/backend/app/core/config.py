@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     APP_DESCRIPTION: str = "LLM训练与推理服务"
     
     # 环境配置
+    APP_ENV: str = Field(default=Environment.DEV, env="APP_ENV")
     ENV: str = Field(default=Environment.DEV, env="APP_ENV")
     DEBUG: bool = Field(default=True, env="DEBUG")
     
@@ -38,7 +39,7 @@ class Settings(BaseSettings):
     LOG_FILE: str = Field(default="../data/training.log", env="LOG_FILE")
     
     # CORS配置
-    CORS_ORIGINS: List[str] = Field(default=["*"], env="CORS_ORIGINS")
+    CORS_ORIGINS: str = Field(default="*", env="CORS_ORIGINS")
     
     # 模型配置
     DEFAULT_MODEL: str = Field(default="bert-base-uncased", env="DEFAULT_MODEL")

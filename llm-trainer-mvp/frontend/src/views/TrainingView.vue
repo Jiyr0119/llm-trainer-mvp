@@ -86,7 +86,7 @@
       </template>
       <div class="jobs-list">
         <!-- 训练任务表格 -->
-        <el-table :data="trainingJobs" style="width: 100%">
+        <el-table :data="trainingJobs || []" style="width: 100%">
           <el-table-column prop="id" label="任务ID" width="80" />
           <el-table-column prop="dataset_id" label="数据集ID" width="100" />
           <!-- 状态列，使用不同颜色的标签显示 -->
@@ -120,7 +120,7 @@
       </template>
       <div class="dataset-list">
         <!-- 可用数据集表格 -->
-        <el-table :data="datasets" style="width: 100%">
+        <el-table :data="datasets || []" style="width: 100%">
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="name" label="名称" />
           <el-table-column prop="created_at" label="创建时间" />
@@ -188,25 +188,23 @@ export default {
     async loadDatasets() {
       try {
         const response = await datasetService.getDatasets()
-        if (response.data && response.data.success) {
-          this.datasets = response.data.data || []
-        } else {
-          this.$message.warning('加载数据集失败: ' + (response.data.message || '未知错误'))
-        }
+        // 确保datasets是一个数组
+        this.datasets = Array.isArray(response) ? response : []
       } catch (error) {
         console.error('Load datasets error:', error)
-        this.$message.error('加载数据集失败')
+        this.$message.error('加载数据集失败: ' + (error.message || '未知错误'))
+        this.datasets = []
       }
     },
     async loadTrainingJobs() {
       try {
         const response = await trainingService.getTrainingJobs()
-        if (response.data && response.data.success) {
-          this.trainingJobs = response.data.data || []
-        }
+        // 确保trainingJobs是一个数组
+        this.trainingJobs = Array.isArray(response) ? response : []
       } catch (error) {
         console.error('Load training jobs error:', error)
-        this.$message.error('加载训练任务失败')
+        this.$message.error('加载训练任务失败: ' + (error.message || '未知错误'))
+        this.trainingJobs = []
       }
     },
     async startTraining() {
@@ -221,20 +219,14 @@ export default {
       
       try {
         const response = await trainingService.startTraining(this.trainingForm)
-        if (response.data && response.data.success) {
-          const data = response.data.data
-          this.statusMessage = response.data.message || '训练任务已提交'
-          this.statusType = 'success'
-          
-          // 保存当前训练任务ID
-          if (data && data.job_id) {
-            this.currentJobId = data.job_id
-            this.trainingStatus = data.status || 'pending'
-            this.startPolling()
-          }
-        } else {
-          this.statusMessage = '训练失败: ' + (response.data.message || '未知错误')
-          this.statusType = 'error'
+        this.statusMessage = '训练任务已提交'
+        this.statusType = 'success'
+        
+        // 保存当前训练任务ID
+        if (response && response.job_id) {
+          this.currentJobId = response.job_id
+          this.trainingStatus = response.status || 'pending'
+          this.startPolling()
         }
       } catch (error) {
         console.error('Training error:', error)
@@ -252,14 +244,12 @@ export default {
       
       try {
         const response = await trainingService.stopTraining(this.currentJobId)
-        if (response.data && response.data.success) {
-          const data = response.data.data
-          this.statusMessage = response.data.message || '训练已停止'
-          this.statusType = 'warning'
-          this.trainingStatus = data.status || 'stopped'
-        } else {
-          this.$message.error('停止训练失败: ' + (response.data.message || '未知错误'))
-        }
+        this.statusMessage = '训练已停止'
+        this.statusType = 'warning'
+        this.trainingStatus = 'stopped'
+        
+        // 刷新训练任务列表
+        await this.loadTrainingJobs()
       } catch (error) {
         console.error('Stop training error:', error)
         this.$message.error('停止训练失败: ' + (error.message || '未知错误'))
@@ -270,36 +260,51 @@ export default {
       
       try {
         const response = await trainingService.getTrainingStatus(this.currentJobId)
-        if (response.data && response.data.success) {
-          const data = response.data.data
-          this.trainingStatus = data.status
-          this.trainingProgress = data.progress || 0
+        if (response) {
+          this.trainingStatus = response.status
+          this.trainingProgress = response.progress || 0
           
           // 更新状态消息
-          if (data.status === 'running') {
+          if (response.status === 'running') {
             this.statusMessage = `训练进行中 (${Math.round(this.trainingProgress)}%)`
             this.statusType = 'info'
-          } else if (data.status === 'succeeded') {
+          } else if (response.status === 'succeeded') {
             this.statusMessage = '训练成功完成'
             this.statusType = 'success'
             this.clearPolling() // 训练完成，停止轮询
-          } else if (data.status === 'failed') {
-            this.statusMessage = '训练失败'
+          } else if (response.status === 'failed') {
+            this.statusMessage = '训练失败: ' + (response.error || '未知错误')
             this.statusType = 'error'
             this.clearPolling() // 训练失败，停止轮询
-          } else if (data.status === 'stopped') {
+          } else if (response.status === 'stopped') {
             this.statusMessage = '训练已手动停止'
             this.statusType = 'warning'
             this.clearPolling() // 训练停止，停止轮询
+          } else if (response.status === 'pending') {
+            this.statusMessage = '训练任务排队中...'
+            this.statusType = 'info'
           }
           
           // 更新日志
-          if (data.logs) {
-            this.trainingLogs = data.logs
+          if (response.logs) {
+            if (Array.isArray(response.logs)) {
+              // 处理日志数组，确保每个元素都是字符串
+              this.trainingLogs = response.logs.map(log => {
+                return typeof log === 'string' ? log : JSON.stringify(log)
+              })
+              // 确保每个日志条目后面有换行符
+              this.trainingLogs = this.trainingLogs.map(log => log.endsWith('\n') ? log : log + '\n')
+            } else if (typeof response.logs === 'string') {
+              // 适应单个日志字符串的情况
+              this.trainingLogs = [response.logs]
+            }
+          } else if (response.log && typeof response.log === 'string') {
+            // 适应单个日志字符串的情况
+            this.trainingLogs = [response.log]
           }
           
           // 如果训练已结束，刷新训练任务列表
-          if (['succeeded', 'failed', 'stopped'].includes(data.status)) {
+          if (['succeeded', 'failed', 'stopped'].includes(response.status)) {
             await this.loadTrainingJobs()
           }
         }

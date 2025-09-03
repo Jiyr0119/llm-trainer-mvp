@@ -26,7 +26,8 @@ import time  # 时间测量
 from pydantic import BaseModel  # 数据验证
 
 # 本地模块导入
-from app.models import DatasetORM, TrainingJobORM, ModelArtifactORM, get_session, init_db  # 数据库模型和会话管理
+from app.models import Dataset, TrainingJob, ModelArtifact  # 数据库模型
+from app.db import get_session, init_db  # 数据库会话管理
 from app.core.middleware import setup_middleware  # 中间件设置
 from app.core.response import APIResponse  # 统一响应工具
 from app.core.errors import APIException, ErrorCode, ResourceNotFoundException, InvalidParamsException, DatasetNotFoundException, TrainingNotFoundException, ModelNotFoundException, DatabaseException, InternalServerException  # 异常和错误码
@@ -41,8 +42,7 @@ os.makedirs(LOG_PATH, exist_ok=True)  # 确保日志目录存在
 logger = setup_logger(
     name="llm-trainer",
     log_file=os.path.join(LOG_PATH, "training.log"),
-    level=get_log_level(settings.LOG_LEVEL),
-    request_id_context=RequestIdContext
+    level=get_log_level()
 )
 
 # 添加控制台处理器
@@ -62,7 +62,7 @@ os.makedirs(MODEL_PATH, exist_ok=True)  # 创建模型目录
 
 # 初始化FastAPI应用
 app = FastAPI(
-    title=settings.APP_TITLE,
+    title=settings.APP_NAME,
     description=settings.APP_DESCRIPTION,
     version=settings.APP_VERSION,
     debug=settings.DEBUG
@@ -202,13 +202,12 @@ class DatasetInfo:
         self.file_path = file_path  # 文件路径
         self.created_at = created_at  # 创建时间
 
-class TrainingRequest:
+class TrainingRequest(BaseModel):
     """训练请求类"""
-    def __init__(self, dataset_id: int, epochs: int = 3, learning_rate: float = 2e-5, batch_size: int = 16):
-        self.dataset_id = dataset_id  # 数据集ID
-        self.epochs = epochs  # 训练轮数
-        self.learning_rate = learning_rate  # 学习率
-        self.batch_size = batch_size  # 批次大小
+    dataset_id: int  # 数据集ID
+    epochs: int = 3  # 训练轮数
+    learning_rate: float = 2e-5  # 学习率
+    batch_size: int = 16  # 批次大小
 
 class PredictionRequest(BaseModel):
     """预测请求模型"""
@@ -330,7 +329,7 @@ def get_model(model_id=None):
         
         # 从数据库获取模型信息
         with get_session() as session:
-            model_artifact = session.get(ModelArtifactORM, model_id)
+            model_artifact = session.get(ModelArtifact, model_id)
             if not model_artifact:
                 raise Exception(f"模型ID {model_id} 不存在")
             
@@ -346,7 +345,7 @@ def get_model(model_id=None):
     # 如果没有指定model_id，加载最新的模型
     with get_session() as session:
         # 查询最新的成功训练的模型
-        statement = select(ModelArtifactORM).order_by(ModelArtifactORM.id.desc()).limit(1)
+        statement = select(ModelArtifact).order_by(ModelArtifact.id.desc()).limit(1)
         result = session.exec(statement).first()
         
         if not result:
@@ -367,9 +366,9 @@ def get_model(model_id=None):
         return model, tokenizer
 
 # API路由
-@app.get("/", response_model=APIResponse)
+@app.get("/", response_model=None)
 async def root():
-    return APIResponse(code=200, message="成功", data={"message": "LLM Trainer MVP API"})
+    return JSONResponse(content=APIResponse.success(data={"message": "LLM Trainer MVP API"}, message="成功"))
 
 # 推理接口
 @app.post("/api/predict")
@@ -421,7 +420,7 @@ async def predict(request: PredictionRequest):
         logger.error(f"预测失败: {str(e)}")
         return APIResponse.error(f"预测失败: {str(e)}")
 
-@app.post("/upload")
+@app.post("/api/datasets/upload")
 async def upload_dataset(file: UploadFile = File(...)):
     try:
         # 检查文件类型
@@ -447,7 +446,7 @@ async def upload_dataset(file: UploadFile = File(...)):
         # 保存到数据库（ORM）
         try:
             with get_session() as session:
-                ds = DatasetORM(name=file.filename, file_path=file_path)
+                ds = Dataset(name=file.filename, file_path=file_path)
                 session.add(ds)
                 session.flush()  # 获取自增ID
                 dataset_id = ds.id
@@ -471,11 +470,11 @@ async def upload_dataset(file: UploadFile = File(...)):
         logger.error(f"数据集上传失败: {str(e)}", exc_info=True)
         raise InternalServerException(message="数据集上传失败")
 
-@app.get("/datasets")
+@app.get("/api/datasets")
 async def list_datasets():
     try:
         with get_session() as session:
-            results = session.exec(select(DatasetORM)).all()
+            results = session.exec(select(Dataset)).all()
             datasets = [
                 {"id": d.id, "name": d.name, "file_path": d.file_path, "created_at": d.created_at.isoformat()}
                 for d in results
@@ -488,19 +487,19 @@ async def list_datasets():
         logger.error(f"获取数据集列表失败: {str(e)}", exc_info=True)
         raise DatabaseException(message="获取数据集列表失败")
 
-@app.post("/train")
+@app.post("/api/train/start")
 async def start_training(request: TrainingRequest, background_tasks: BackgroundTasks):
     try:
         # 获取数据集信息
         with get_session() as session:
-            ds = session.get(DatasetORM, request.dataset_id)
+            ds = session.get(Dataset, request.dataset_id)
             if not ds:
                 raise DatasetNotFoundException("数据集未找到")
             file_path = ds.file_path
         
         # 创建训练任务记录
         with get_session() as session:
-            job = TrainingJobORM(
+            job = TrainingJob(
                 dataset_id=request.dataset_id,
                 status='pending',
                 model_name="",  # 将在训练完成后更新
@@ -537,18 +536,15 @@ async def start_training(request: TrainingRequest, background_tasks: BackgroundT
         logger.error(f"训练失败: {str(e)}", exc_info=True)
         raise InternalServerException(message=f"训练失败: {str(e)}")
 
-@app.get("/train/status")
-async def get_training_status():
+@app.get("/api/train/status/{job_id}")
+async def get_training_status(job_id: int):
     try:
         with get_session() as session:
-            # 获取最近的训练任务
-            job = session.exec(select(TrainingJobORM).order_by(TrainingJobORM.id.desc()).limit(1)).first()
+            # 获取指定的训练任务
+            job = session.get(TrainingJob, job_id)
             
             if not job:
-                return APIResponse.success(
-                    message="没有训练记录",
-                    data={"status": "ready", "job_id": None}
-                )
+                raise TrainingNotFoundException(f"训练任务 ID {job_id} 不存在")
             
             return APIResponse.success(
                 message=f"训练状态: {job.status}",
@@ -558,11 +554,14 @@ async def get_training_status():
                     "progress": job.progress if hasattr(job, 'progress') else 0
                 }
             )
+    except TrainingNotFoundException as e:
+        logger.error(f"获取训练状态失败: {str(e)}", exc_info=True)
+        raise
     except Exception as e:
         logger.error(f"获取训练状态失败: {str(e)}", exc_info=True)
         raise InternalServerException(message="获取训练状态失败")
 
-@app.post("/train/stop", response_model=APIResponse)
+@app.post("/api/train/stop", response_model=None)
 async def stop_training(request: dict):
     try:
         job_id = request.get("job_id")
@@ -574,7 +573,7 @@ async def stop_training(request: dict):
             )
             
         with get_session() as session:
-            job = session.get(TrainingJobORM, job_id)
+            job = session.get(TrainingJob, job_id)
             if not job:
                 return APIResponse(
                     code=404,
@@ -607,7 +606,7 @@ async def stop_training(request: dict):
             data=None
         )
 
-@app.post("/predict")
+@app.post("/api/predict")
 async def predict(request: PredictionRequest):
     try:
         # 加载模型和分词器
@@ -652,12 +651,12 @@ async def predict(request: PredictionRequest):
         logger.error(f"预测失败: {str(e)}", exc_info=True)
         raise InternalServerException(message="预测失败")
 
-@app.get("/dataset/preview/{dataset_id}")
+@app.get("/api/datasets/{dataset_id}/preview")
 async def preview_dataset(dataset_id: int, limit: int = 10):
     try:
         # 获取数据集信息
         with get_session() as session:
-            ds = session.get(DatasetORM, dataset_id)
+            ds = session.get(Dataset, dataset_id)
             if not ds:
                 raise DatasetNotFoundException(f"数据集 ID {dataset_id} 不存在")
             
@@ -699,14 +698,14 @@ async def train_model_task(job_id: int, dataset_id: int, epochs: int, learning_r
     try:
         # 获取数据集信息
         with get_session() as session:
-            dataset = session.get(DatasetORM, dataset_id)
+            dataset = session.get(Dataset, dataset_id)
             if not dataset:
                 logger.error(f"数据集不存在: {dataset_id}")
                 update_job_status(job_id, "failed", error_message="数据集不存在")
                 return
             
             # 更新任务状态为运行中
-            job = session.get(TrainingJobORM, job_id)
+            job = session.get(TrainingJob, job_id)
             job.status = "running"
             job.started_at = datetime.utcnow()
             session.add(job)
@@ -722,7 +721,7 @@ async def train_model_task(job_id: int, dataset_id: int, epochs: int, learning_r
         
         # 更新日志文件路径
         with get_session() as session:
-            job = session.get(TrainingJobORM, job_id)
+            job = session.get(TrainingJob, job_id)
             job.log_file = log_file
             session.add(job)
             session.commit()
@@ -777,7 +776,7 @@ async def train_model_task(job_id: int, dataset_id: int, epochs: int, learning_r
             for batch in dataloader:
                 # 检查任务是否被停止
                 with get_session() as session:
-                    job = session.get(TrainingJobORM, job_id)
+                    job = session.get(TrainingJob, job_id)
                     if job.status == "stopped":
                         job_logger.info("训练任务已被手动停止")
                         return
@@ -803,7 +802,7 @@ async def train_model_task(job_id: int, dataset_id: int, epochs: int, learning_r
                 # 每10步更新一次进度
                 if current_step % 10 == 0 or current_step == total_steps:
                     with get_session() as session:
-                        job = session.get(TrainingJobORM, job_id)
+                        job = session.get(TrainingJob, job_id)
                         job.progress = progress
                         session.add(job)
                         session.commit()
@@ -826,7 +825,7 @@ async def train_model_task(job_id: int, dataset_id: int, epochs: int, learning_r
 # 更新任务状态的辅助函数
 def update_job_status(job_id: int, status: str, model_path: str = None, error_message: str = None):
     with get_session() as session:
-        job = session.get(TrainingJobORM, job_id)
+        job = session.get(TrainingJob, job_id)
         if not job:
             logger.error(f"找不到训练任务: {job_id}")
             return
@@ -884,7 +883,7 @@ async def upload_dataset(file: UploadFile = File(...)):
         
         # 保存到数据库
         with get_session() as session:
-            dataset = DatasetORM(name=file.filename, file_path=file_path)
+            dataset = Dataset(name=file.filename, file_path=file_path)
             session.add(dataset)
             session.commit()
             session.refresh(dataset)
@@ -902,7 +901,7 @@ async def upload_dataset(file: UploadFile = File(...)):
 async def get_datasets():
     try:
         with get_session() as session:
-            statement = select(DatasetORM)
+            statement = select(Dataset)
             results = session.exec(statement).all()
             datasets = [
                 {"id": ds.id, "name": ds.name, "file_path": ds.file_path, "created_at": ds.created_at}
@@ -918,7 +917,7 @@ async def get_datasets():
 async def preview_dataset(dataset_id: int, limit: int = Query(10, ge=1, le=100)):
     try:
         with get_session() as session:
-            dataset = session.get(DatasetORM, dataset_id)
+            dataset = session.get(Dataset, dataset_id)
             if not dataset:
                 return APIResponse.error("数据集不存在", 404)
             
@@ -950,12 +949,12 @@ async def start_training(request: dict, background_tasks: BackgroundTasks):
         
         # 验证数据集是否存在
         with get_session() as session:
-            dataset = session.get(DatasetORM, training_request.dataset_id)
+            dataset = session.get(Dataset, training_request.dataset_id)
             if not dataset:
                 return APIResponse.error("数据集不存在", 404)
             
             # 创建训练任务记录
-            job = TrainingJobORM(
+            job = TrainingJob(
                 dataset_id=training_request.dataset_id,
                 status="pending",
                 epochs=training_request.epochs,
@@ -990,7 +989,7 @@ async def start_training(request: dict, background_tasks: BackgroundTasks):
 async def get_training_status(job_id: int):
     try:
         with get_session() as session:
-            job = session.get(TrainingJobORM, job_id)
+            job = session.get(TrainingJob, job_id)
             if not job:
                 return APIResponse.error("训练任务不存在", 404)
             
@@ -1026,7 +1025,7 @@ async def stop_training(request: dict):
             return APIResponse.error("缺少job_id参数")
         
         with get_session() as session:
-            job = session.get(TrainingJobORM, job_id)
+            job = session.get(TrainingJob, job_id)
             if not job:
                 return APIResponse.error("训练任务不存在", 404)
             
@@ -1050,7 +1049,7 @@ async def stop_training(request: dict):
 async def get_training_logs(job_id: int, lines: int = Query(50, ge=1, le=1000)):
     try:
         with get_session() as session:
-            job = session.get(TrainingJobORM, job_id)
+            job = session.get(TrainingJob, job_id)
             if not job:
                 return APIResponse.error("训练任务不存在", 404)
             
@@ -1073,7 +1072,7 @@ async def get_training_logs(job_id: int, lines: int = Query(50, ge=1, le=1000)):
 async def get_training_jobs():
     try:
         with get_session() as session:
-            statement = select(TrainingJobORM).order_by(TrainingJobORM.id.desc())
+            statement = select(TrainingJob).order_by(TrainingJob.id.desc())
             results = session.exec(statement).all()
             jobs = [
                 {

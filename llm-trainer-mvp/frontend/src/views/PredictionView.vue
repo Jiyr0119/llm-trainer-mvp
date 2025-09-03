@@ -17,8 +17,8 @@
             <el-select 
               v-model="predictionForm.modelId" 
               placeholder="选择模型（默认使用最新模型）"
-              clearable  <!-- 允许清除选择，使用默认模型 -->
-            >
+              clearable
+            > <!-- 允许清除选择，使用默认模型 -->
               <!-- 动态生成模型选项 -->
               <el-option 
                 v-for="model in trainedModels" 

@@ -3,10 +3,10 @@
   <div class="navigation">
     <!-- Element Plus菜单组件 -->
     <el-menu
-      :default-active="$route.path" <!-- 根据当前路由路径设置活动菜单项 -->
+      :default-active="$route.path" 
       class="el-menu-demo"
-      mode="horizontal" <!-- 水平模式菜单 -->
-      router <!-- 启用路由模式，自动处理导航 -->
+      mode="horizontal" 
+      router
     >
       <!-- 各个导航菜单项，index属性对应路由路径 -->
       <el-menu-item index="/">首页</el-menu-item>
