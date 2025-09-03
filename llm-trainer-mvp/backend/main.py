@@ -31,16 +31,17 @@ from app.core.middleware import setup_middleware  # 中间件设置
 from app.core.response import APIResponse  # 统一响应工具
 from app.core.errors import APIException, ErrorCode, ResourceNotFoundException, InvalidParamsException, DatasetNotFoundException, TrainingNotFoundException, ModelNotFoundException, DatabaseException, InternalServerException  # 异常和错误码
 from app.core.logger import setup_logger, RequestIdContext  # 新的日志系统
+from app.core.config import settings, get_log_level  # 配置系统
 
 # 配置日志系统
-LOG_PATH = "../data/logs"  # 定义日志文件存储路径
+LOG_PATH = settings.LOG_PATH  # 从配置中获取日志文件存储路径
 os.makedirs(LOG_PATH, exist_ok=True)  # 确保日志目录存在
 
 # 使用新的日志系统
 logger = setup_logger(
     name="llm-trainer",
-    log_file="../data/training.log",
-    level=logging.INFO,
+    log_file=os.path.join(LOG_PATH, "training.log"),
+    level=get_log_level(settings.LOG_LEVEL),
     request_id_context=RequestIdContext
 )
 
@@ -52,20 +53,25 @@ console_handler.setFormatter(logging.Formatter(
 logger.addHandler(console_handler)
 
 # 定义应用关键路径
-UPLOAD_PATH = "../data/uploads"  # 上传文件存储路径
-MODEL_PATH = "../data/models"  # 模型存储路径
+UPLOAD_PATH = settings.UPLOAD_PATH  # 上传文件存储路径
+MODEL_PATH = settings.MODEL_PATH  # 模型存储路径
 
 # 确保必要的目录存在，不存在则创建
 os.makedirs(UPLOAD_PATH, exist_ok=True)  # 创建上传目录
 os.makedirs(MODEL_PATH, exist_ok=True)  # 创建模型目录
 
 # 初始化FastAPI应用
-app = FastAPI(title="LLM Trainer API")  # 创建应用实例
+app = FastAPI(
+    title=settings.APP_TITLE,
+    description=settings.APP_DESCRIPTION,
+    version=settings.APP_VERSION,
+    debug=settings.DEBUG
+)  # 创建应用实例
 
 # 配置跨域资源共享(CORS)中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 允许所有来源访问，注意：生产环境应该限制为特定域名
+    allow_origins=settings.CORS_ORIGINS,  # 从配置中获取允许的来源
     allow_credentials=True,  # 允许发送凭证
     allow_methods=["*"],  # 允许所有HTTP方法
     allow_headers=["*"],  # 允许所有HTTP头
