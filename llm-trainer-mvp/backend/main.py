@@ -1,60 +1,69 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
-import pandas as pd
-import os
-import json
-import shutil
-import logging
-from datetime import datetime
-from typing import List, Optional, Dict
-from sqlmodel import Session, select
-from transformers import BertTokenizer, BertForSequenceClassification, AdamW
-from torch.utils.data import Dataset, DataLoader
-import torch
-import time
-from pydantic import BaseModel
+# 导入必要的库和模块
+# FastAPI相关导入
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query  # FastAPI核心组件
+from fastapi.middleware.cors import CORSMiddleware  # 跨域资源共享中间件
+from fastapi.responses import FileResponse, JSONResponse  # 特殊响应类型
 
-from models import DatasetORM, TrainingJobORM, ModelArtifactORM, get_session, init_db
+# 数据处理相关
+import pandas as pd  # 数据分析库
+import os  # 操作系统接口
+import json  # JSON处理
+import shutil  # 高级文件操作
+import logging  # 日志记录
+from datetime import datetime  # 日期时间处理
+from typing import List, Optional, Dict  # 类型提示
 
-# 配置日志
-LOG_PATH = "../data/logs"
-os.makedirs(LOG_PATH, exist_ok=True)
+# 数据库相关
+from sqlmodel import Session, select  # SQLModel ORM
+
+# 机器学习相关
+from transformers import BertTokenizer, BertForSequenceClassification, AdamW  # Hugging Face Transformers
+from torch.utils.data import Dataset, DataLoader  # PyTorch数据加载
+import torch  # PyTorch深度学习框架
+import time  # 时间测量
+from pydantic import BaseModel  # 数据验证
+
+# 本地模块导入
+from models import DatasetORM, TrainingJobORM, ModelArtifactORM, get_session, init_db  # 数据库模型和会话管理
+
+# 配置日志系统
+LOG_PATH = "../data/logs"  # 定义日志文件存储路径
+os.makedirs(LOG_PATH, exist_ok=True)  # 确保日志目录存在
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,  # 设置日志级别为INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",  # 定义日志格式
     handlers=[
-        logging.FileHandler("../data/training.log"),
-        logging.StreamHandler()
+        logging.FileHandler("../data/training.log"),  # 将日志输出到文件
+        logging.StreamHandler()  # 同时输出到控制台
     ]
 )
-logger = logging.getLogger("llm-trainer")
+logger = logging.getLogger("llm-trainer")  # 获取应用专用logger
 
-# 定义路径
-UPLOAD_PATH = "../data/uploads"
-MODEL_PATH = "../data/models"
+# 定义应用关键路径
+UPLOAD_PATH = "../data/uploads"  # 上传文件存储路径
+MODEL_PATH = "../data/models"  # 模型存储路径
 
-# 确保目录存在
-os.makedirs(UPLOAD_PATH, exist_ok=True)
-os.makedirs(MODEL_PATH, exist_ok=True)
+# 确保必要的目录存在，不存在则创建
+os.makedirs(UPLOAD_PATH, exist_ok=True)  # 创建上传目录
+os.makedirs(MODEL_PATH, exist_ok=True)  # 创建模型目录
 
 # 初始化FastAPI应用
-app = FastAPI()
+app = FastAPI()  # 创建应用实例
 
-# 配置CORS
+# 配置跨域资源共享(CORS)中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],  # 允许所有来源访问，注意：生产环境应该限制为特定域名
+    allow_credentials=True,  # 允许发送凭证
+    allow_methods=["*"],  # 允许所有HTTP方法
+    allow_headers=["*"],  # 允许所有HTTP头
 )
 
-# 初始化数据库
+# 初始化数据库连接和表结构
 init_db()
 
-# 模型缓存
-model_cache = {}
+# 创建模型缓存，用于存储已加载的模型，避免重复加载
+model_cache = {}  # 模型缓存字典
 
 # API响应模型
 class APIResponse:
@@ -69,61 +78,96 @@ class APIResponse:
             content={"success": False, "message": message}
         )
 
-# 数据模型
+# 数据模型定义
 class DatasetInfo:
+    """数据集信息类"""
     def __init__(self, id, name, file_path, created_at):
-        self.id = id
-        self.name = name
-        self.file_path = file_path
-        self.created_at = created_at
+        self.id = id  # 数据集ID
+        self.name = name  # 数据集名称
+        self.file_path = file_path  # 文件路径
+        self.created_at = created_at  # 创建时间
 
 class TrainingRequest:
+    """训练请求类"""
     def __init__(self, dataset_id: int, epochs: int = 3, learning_rate: float = 2e-5, batch_size: int = 16):
-        self.dataset_id = dataset_id
-        self.epochs = epochs
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
+        self.dataset_id = dataset_id  # 数据集ID
+        self.epochs = epochs  # 训练轮数
+        self.learning_rate = learning_rate  # 学习率
+        self.batch_size = batch_size  # 批次大小
 
 class PredictionRequest(BaseModel):
-    text: str
-    model_id: Optional[int] = None
+    """预测请求模型"""
+    text: str  # 要预测的文本
+    model_id: Optional[int] = None  # 可选的模型ID，不提供则使用最新模型
 
 class TrainingStatus(BaseModel):
-    status: str
-    message: str
-    job_id: Optional[int] = None
+    """训练状态响应模型"""
+    status: str  # 任务状态（pending/running/completed/failed）
+    message: str  # 状态消息
+    job_id: Optional[int] = None  # 训练任务ID
 
 # 自定义数据集类
 class TextDataset(Dataset):
+    """文本分类数据集类，用于将文本和标签转换为模型可用的张量格式"""
     def __init__(self, texts, labels, tokenizer, max_length=128):
-        self.texts = texts
-        self.labels = labels
-        self.tokenizer = tokenizer
-        self.max_length = max_length
+        """初始化数据集
+        
+        Args:
+            texts (List[str]): 文本列表
+            labels (List[int]): 标签列表
+            tokenizer: 分词器实例
+            max_length (int): 文本最大长度，默认128
+        """
+        self.texts = texts  # 文本列表
+        self.labels = labels  # 标签列表
+        self.tokenizer = tokenizer  # 分词器
+        self.max_length = max_length  # 最大序列长度
     
     def __len__(self):
+        """返回数据集大小"""
         return len(self.texts)
     
     def __getitem__(self, idx):
-        text = str(self.texts[idx])
-        label = self.labels[idx]
+        """获取指定索引的样本
         
+        Args:
+            idx (int): 样本索引
+            
+        Returns:
+            dict: 包含input_ids, attention_mask和labels的字典
+        """
+        text = str(self.texts[idx])  # 获取文本并确保是字符串类型
+        label = self.labels[idx]  # 获取标签
+        
+        # 使用tokenizer将文本转换为模型输入格式
         encoding = self.tokenizer(
             text,
-            truncation=True,
-            padding='max_length',
-            max_length=self.max_length,
-            return_tensors='pt'
+            truncation=True,  # 截断超长文本
+            padding='max_length',  # 填充到最大长度
+            max_length=self.max_length,  # 最大长度
+            return_tensors='pt'  # 返回PyTorch张量
         )
         
+        # 返回模型所需的输入格式
         return {
-            'input_ids': encoding['input_ids'].flatten(),
-            'attention_mask': encoding['attention_mask'].flatten(),
-            'labels': torch.tensor(label, dtype=torch.long)
+            'input_ids': encoding['input_ids'].flatten(),  # 输入ID
+            'attention_mask': encoding['attention_mask'].flatten(),  # 注意力掩码
+            'labels': torch.tensor(label, dtype=torch.long)  # 标签
         }
 
 # 加载模型和分词器
 def load_model_and_tokenizer(model_path=None):
+    """加载BERT模型和分词器
+    
+    Args:
+        model_path (str, optional): 模型路径，如果为None则使用默认路径
+        
+    Returns:
+        tuple: (model, tokenizer) 模型和分词器实例
+        
+    Raises:
+        Exception: 加载模型失败时抛出异常
+    """
     model_name = 'bert-base-chinese'
     try:
         # 尝试从本地加载模型
@@ -151,6 +195,17 @@ def load_model_and_tokenizer(model_path=None):
 
 # 获取模型（带缓存）
 def get_model(model_id=None):
+    """获取模型，支持从缓存或数据库加载模型
+    
+    Args:
+        model_id (int, optional): 模型ID。如果为None，则加载最新的训练模型或默认模型。
+        
+    Returns:
+        tuple: (model, tokenizer) 模型和分词器实例
+        
+    Raises:
+        Exception: 模型不存在或加载失败时抛出异常
+    """
     # 如果指定了model_id，尝试加载特定模型
     if model_id:
         # 检查缓存
