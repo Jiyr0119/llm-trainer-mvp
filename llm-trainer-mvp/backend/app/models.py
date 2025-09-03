@@ -11,6 +11,7 @@ class Dataset(SQLModel, table=True):
     name: str  # 数据集名称
     file_path: str  # 数据集文件在服务器上的路径
     created_at: datetime = Field(default_factory=datetime.utcnow)  # 创建时间，默认为当前UTC时间
+    total_rows: Optional[int] = None  # 数据集总行数
 
 
 # 训练任务模型

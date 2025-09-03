@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { getErrorMessage, getErrorType, ERROR_TYPES } from '../utils/errorCodes'
 
 // 创建axios实例
 const axiosInstance = axios.create({
@@ -41,23 +42,15 @@ axiosInstance.interceptors.response.use(
       // 服务器返回了错误状态码和数据
       const { status, data } = error.response;
       
-      // 使用后端返回的错误信息（如果有）
-      if (data && data.message) {
-        errorMessage = data.message;
-      }
-      
-      // 使用后端返回的错误码（如果有）
+      // 优先使用后端返回的错误信息和错误码
       if (data && data.code) {
         errorCode = data.code;
-      }
-      
-      // 使用后端返回的错误数据（如果有）
-      if (data && data.data) {
-        errorData = data.data;
-      }
-      
-      // 如果后端没有提供详细信息，根据HTTP状态码生成默认消息
-      if (!data || !data.message) {
+        // 使用错误码映射获取用户友好的错误信息
+        errorMessage = getErrorMessage(data.code, data.message || '操作失败');
+      } else if (data && data.message) {
+        errorMessage = data.message;
+      } else {
+        // 如果后端没有提供详细信息，根据HTTP状态码生成默认消息
         switch (status) {
           case 400:
             errorMessage = '请求参数错误';
@@ -78,6 +71,11 @@ axiosInstance.interceptors.response.use(
             errorMessage = `服务器错误 (${status})`;
         }
       }
+      
+      // 获取错误数据
+      if (data && data.data) {
+        errorData = data.data;
+      }
     } else if (error.request) {
       // 请求已发送但没有收到响应
       errorMessage = '网络错误，服务器未响应';
@@ -88,15 +86,40 @@ axiosInstance.interceptors.response.use(
       errorCode = 'REQUEST_ERROR';
     }
     
-    // 显示错误消息
-    ElMessage.error(errorMessage);
+    // 根据错误类型显示不同的提示样式
+    const errorType = getErrorType(errorCode);
+    
+    if (errorType === ERROR_TYPES.SYSTEM_ERROR) {
+      // 系统错误，显示警告样式
+      ElMessage({
+        message: errorMessage,
+        type: 'error',
+        duration: 5000,
+        showClose: true
+      });
+    } else if (errorType === ERROR_TYPES.USER_ERROR) {
+      // 用户错误，显示警告样式
+      ElMessage({
+        message: errorMessage,
+        type: 'warning',
+        duration: 4000
+      });
+    } else {
+      // 可恢复错误，显示信息样式
+      ElMessage({
+        message: errorMessage,
+        type: 'info',
+        duration: 3000
+      });
+    }
     
     // 返回标准化的错误对象
     return Promise.reject({
       success: false,
       message: errorMessage,
       code: errorCode,
-      data: errorData
+      data: errorData,
+      type: errorType
     });
   }
 )
