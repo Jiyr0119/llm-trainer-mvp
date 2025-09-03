@@ -27,73 +27,77 @@ axiosInstance.interceptors.request.use(
 
 // 响应拦截器
 axiosInstance.interceptors.response.use(
-  response => {
-    // 处理统一的响应格式
-    const res = response.data
-    
-    // 如果响应包含code字段，说明是新的统一格式
-    if (res.code !== undefined) {
-      if (res.code === 200) {
-        // 成功响应，直接返回数据部分
-        return {
-          ...response,
-          data: res.data || res // 兼容旧格式，如果没有data字段，返回整个响应
-        }
-      } else {
-        // 业务逻辑错误
-        ElMessage.error(res.message || '请求失败')
-        return Promise.reject(new Error(res.message || '未知错误'))
-      }
-    }
-    
-    // 旧格式直接返回
-    return response
+  (response) => {
+    // 如果响应成功，直接返回数据
+    return response.data;
   },
-  error => {
-    console.error('Response error:', error)
+  (error) => {
+    // 处理HTTP错误
+    let errorMessage = '未知错误';
+    let errorCode = 'UNKNOWN_ERROR';
+    let errorData = null;
     
-    // 错误处理
-    const { response } = error
-    if (response) {
-      // 服务器返回了错误响应
-      const { status, data } = response
-      let message = '请求失败'
+    if (error.response) {
+      // 服务器返回了错误状态码和数据
+      const { status, data } = error.response;
       
-      // 检查是否是新的统一格式
-      if (data && data.code && data.message) {
-        message = data.message
-      } else if (data && data.detail) {
-        message = data.detail
-      } else {
-        // 根据状态码定制错误信息
+      // 使用后端返回的错误信息（如果有）
+      if (data && data.message) {
+        errorMessage = data.message;
+      }
+      
+      // 使用后端返回的错误码（如果有）
+      if (data && data.code) {
+        errorCode = data.code;
+      }
+      
+      // 使用后端返回的错误数据（如果有）
+      if (data && data.data) {
+        errorData = data.data;
+      }
+      
+      // 如果后端没有提供详细信息，根据HTTP状态码生成默认消息
+      if (!data || !data.message) {
         switch (status) {
           case 400:
-            message = '请求参数错误'
-            break
+            errorMessage = '请求参数错误';
+            break;
           case 401:
-            message = '未授权，请登录'
-            break
+            errorMessage = '未授权，请登录';
+            break;
           case 403:
-            message = '拒绝访问'
-            break
+            errorMessage = '拒绝访问';
+            break;
           case 404:
-            message = '请求的资源不存在'
-            break
+            errorMessage = '请求的资源不存在';
+            break;
           case 500:
-            message = '服务器内部错误'
-            break
+            errorMessage = '服务器内部错误';
+            break;
           default:
-            message = `请求失败(${status})`
+            errorMessage = `服务器错误 (${status})`;
         }
       }
-      
-      ElMessage.error(message)
+    } else if (error.request) {
+      // 请求已发送但没有收到响应
+      errorMessage = '网络错误，服务器未响应';
+      errorCode = 'NETWORK_ERROR';
     } else {
-      // 请求没有到达服务器
-      ElMessage.error('网络错误，请检查您的网络连接')
+      // 请求配置出错
+      errorMessage = `请求错误: ${error.message}`;
+      errorCode = 'REQUEST_ERROR';
     }
     
-    return Promise.reject(error)
+    // 显示错误消息
+    ElMessage.error(errorMessage);
+    
+    // 返回标准化的错误对象
+    return Promise.reject({
+      success: false,
+      message: errorMessage,
+      code: errorCode,
+      data: errorData
+    });
   }
 )
 

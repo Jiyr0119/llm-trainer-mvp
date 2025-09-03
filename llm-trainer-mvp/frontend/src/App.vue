@@ -5,17 +5,22 @@
     <Navigation />
     <!-- 路由视图，根据当前路由显示对应的页面组件 -->
     <router-view />
+    <!-- 全局错误处理组件 -->
+    <ErrorHandler />
   </div>
 </template>
 
 <script>
 // 导入导航组件
 import Navigation from './components/Navigation.vue'
+// 导入错误处理组件
+import ErrorHandler from './components/ErrorHandler.vue'
 
 export default {
   name: 'App', // 组件名称
   components: {
-    Navigation // 注册导航组件，使其可在模板中使用
+    Navigation, // 注册导航组件，使其可在模板中使用
+    ErrorHandler // 注册错误处理组件
   }
 }
 </script>

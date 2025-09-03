@@ -1,8 +1,10 @@
 # 导入必要的库和模块
 # FastAPI相关导入
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query  # FastAPI核心组件
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query, Request  # FastAPI核心组件
 from fastapi.middleware.cors import CORSMiddleware  # 跨域资源共享中间件
 from fastapi.responses import FileResponse, JSONResponse  # 特殊响应类型
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 
 # 数据处理相关
 import pandas as pd  # 数据分析库
@@ -24,20 +26,30 @@ import time  # 时间测量
 from pydantic import BaseModel  # 数据验证
 
 # 本地模块导入
-from models import DatasetORM, TrainingJobORM, ModelArtifactORM, get_session, init_db  # 数据库模型和会话管理
+from app.models import DatasetORM, TrainingJobORM, ModelArtifactORM, get_session, init_db  # 数据库模型和会话管理
+from app.core.middleware import setup_middleware  # 中间件设置
+from app.core.response import APIResponse  # 统一响应工具
+from app.core.errors import APIException, ErrorCode, ResourceNotFoundException, InvalidParamsException, DatasetNotFoundException, TrainingNotFoundException, ModelNotFoundException, DatabaseException, InternalServerException  # 异常和错误码
+from app.core.logger import setup_logger, RequestIdContext  # 新的日志系统
 
 # 配置日志系统
 LOG_PATH = "../data/logs"  # 定义日志文件存储路径
 os.makedirs(LOG_PATH, exist_ok=True)  # 确保日志目录存在
-logging.basicConfig(
-    level=logging.INFO,  # 设置日志级别为INFO
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",  # 定义日志格式
-    handlers=[
-        logging.FileHandler("../data/training.log"),  # 将日志输出到文件
-        logging.StreamHandler()  # 同时输出到控制台
-    ]
+
+# 使用新的日志系统
+logger = setup_logger(
+    name="llm-trainer",
+    log_file="../data/training.log",
+    level=logging.INFO,
+    request_id_context=RequestIdContext
 )
-logger = logging.getLogger("llm-trainer")  # 获取应用专用logger
+
+# 添加控制台处理器
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter(
+    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+))
+logger.addHandler(console_handler)
 
 # 定义应用关键路径
 UPLOAD_PATH = "../data/uploads"  # 上传文件存储路径
@@ -48,7 +60,7 @@ os.makedirs(UPLOAD_PATH, exist_ok=True)  # 创建上传目录
 os.makedirs(MODEL_PATH, exist_ok=True)  # 创建模型目录
 
 # 初始化FastAPI应用
-app = FastAPI()  # 创建应用实例
+app = FastAPI(title="LLM Trainer API")  # 创建应用实例
 
 # 配置跨域资源共享(CORS)中间件
 app.add_middleware(
@@ -59,24 +71,121 @@ app.add_middleware(
     allow_headers=["*"],  # 允许所有HTTP头
 )
 
+# 设置自定义中间件（请求ID和异常处理）
+setup_middleware(app)
+
+# 添加全局异常处理
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """处理请求验证错误"""
+    logger.error(f"请求验证错误: {exc}", extra={"request_path": request.url.path})
+    return APIResponse.error(
+        message="请求参数验证失败",
+        code=ErrorCode.INVALID_PARAMS.value,
+        data={"detail": exc.errors()},
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """处理HTTP异常"""
+    logger.error(f"HTTP异常: {exc.detail}", extra={"request_path": request.url.path})
+    return APIResponse.error(
+        message=str(exc.detail),
+        code=exc.status_code,
+        status_code=exc.status_code
+    )
+
+@app.exception_handler(APIException)
+async def api_exception_handler(request: Request, exc: APIException):
+    """处理自定义API异常"""
+    logger.error(f"API异常: {exc.message}", extra={
+        "request_path": request.url.path,
+        "error_code": exc.code,
+        "error_data": exc.data
+    })
+    return APIResponse.error(
+        message=exc.message,
+        code=exc.code,
+        data=exc.data,
+        status_code=exc.status_code
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """处理所有未捕获的异常"""
+    logger.exception(f"未捕获的异常: {str(exc)}", extra={"request_path": request.url.path})
+    return APIResponse.error(
+        message="服务器内部错误",
+        code=ErrorCode.INTERNAL_SERVER_ERROR.value,
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+    )
+
+# 添加异常处理器
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """处理请求验证错误"""
+    # 记录错误详情
+    logger.error(f"请求验证错误: {str(exc)}", exc_info=True)
+    
+    # 提取错误详情
+    error_details = []
+    for error in exc.errors():
+        error_details.append({
+            "loc": error["loc"],
+            "msg": error["msg"],
+            "type": error["type"]
+        })
+    
+    # 返回格式化的错误响应
+    return JSONResponse(
+        status_code=400,
+        content=APIResponse.error(
+            message="请求参数验证失败",
+            code=ErrorCode.INVALID_PARAMS.code,
+            data=error_details
+        )
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """处理HTTP异常"""
+    # 记录错误详情
+    logger.error(f"HTTP异常: {str(exc)}", exc_info=True)
+    
+    # 返回格式化的错误响应
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=APIResponse.error(
+            message=exc.detail,
+            code=exc.status_code,
+            data=None
+        )
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """处理通用异常"""
+    # 记录错误详情
+    logger.error(f"未捕获的异常: {str(exc)}", exc_info=True)
+    
+    # 返回格式化的错误响应
+    return JSONResponse(
+        status_code=500,
+        content=APIResponse.error(
+            message="服务器内部错误",
+            code=ErrorCode.INTERNAL_SERVER_ERROR.code,
+            data=None
+        )
+    )
+
 # 初始化数据库连接和表结构
 init_db()
 
 # 创建模型缓存，用于存储已加载的模型，避免重复加载
 model_cache = {}  # 模型缓存字典
 
-# API响应模型
-class APIResponse:
-    @staticmethod
-    def success(data=None, message="操作成功"):
-        return {"success": True, "message": message, "data": data}
-    
-    @staticmethod
-    def error(message="操作失败", status_code=400):
-        return JSONResponse(
-            status_code=status_code,
-            content={"success": False, "message": message}
-        )
+# 使用新的APIResponse类替代旧的响应模型
 
 # 数据模型定义
 class DatasetInfo:
@@ -306,151 +415,146 @@ async def predict(request: PredictionRequest):
         logger.error(f"预测失败: {str(e)}")
         return APIResponse.error(f"预测失败: {str(e)}")
 
-@app.post("/upload", response_model=APIResponse)
+@app.post("/upload")
 async def upload_dataset(file: UploadFile = File(...)):
     try:
+        # 检查文件类型
+        if not file.filename.endswith('.csv'):
+            raise InvalidParamsException("只支持CSV文件格式")
+            
         # 保存文件
         file_path = f"../data/uploads/{file.filename}"
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # 保存到数据库（ORM）
-        with get_session() as session:
-            ds = DatasetORM(name=file.filename, file_path=file_path)
-            session.add(ds)
-            session.flush()  # 获取自增ID
-            dataset_id = ds.id
+        # 验证CSV格式
+        try:
+            df = pd.read_csv(file_path)
+            if 'text' not in df.columns or 'label' not in df.columns:
+                os.remove(file_path)  # 删除不符合要求的文件
+                raise InvalidParamsException("CSV文件必须包含'text'和'label'列")
+        except Exception as e:
+            os.remove(file_path)  # 删除无法解析的文件
+            raise InvalidParamsException(f"CSV文件解析失败: {str(e)}")
         
-        return APIResponse(
-            code=200,
+        # 保存到数据库（ORM）
+        try:
+            with get_session() as session:
+                ds = DatasetORM(name=file.filename, file_path=file_path)
+                session.add(ds)
+                session.flush()  # 获取自增ID
+                dataset_id = ds.id
+                session.commit()
+        except Exception as e:
+            os.remove(file_path)  # 删除文件，因为数据库操作失败
+            raise DatabaseException(f"保存数据集信息失败: {str(e)}")
+        
+        return APIResponse.success(
             message="数据集上传成功",
             data={
                 "id": dataset_id,
                 "filename": file.filename
             }
         )
+    except (InvalidParamsException, DatabaseException) as e:
+        # 这些异常已经在上面抛出
+        logger.error(f"数据集上传失败: {str(e)}", exc_info=True)
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"数据集上传失败: {str(e)}", exc_info=True)
+        raise InternalServerException(message="数据集上传失败")
 
-@app.get("/datasets", response_model=APIResponse)
+@app.get("/datasets")
 async def list_datasets():
-    with get_session() as session:
-        results = session.exec(select(DatasetORM)).all()
-        datasets = [
-            {"id": d.id, "name": d.name, "file_path": d.file_path, "created_at": d.created_at.isoformat()}
-            for d in results
-        ]
-        return APIResponse(
-            code=200,
-            message="获取数据集列表成功",
-            data={"datasets": datasets}
-        )
+    try:
+        with get_session() as session:
+            results = session.exec(select(DatasetORM)).all()
+            datasets = [
+                {"id": d.id, "name": d.name, "file_path": d.file_path, "created_at": d.created_at.isoformat()}
+                for d in results
+            ]
+            return APIResponse.success(
+                data={"datasets": datasets},
+                message="获取数据集列表成功"
+            )
+    except Exception as e:
+        logger.error(f"获取数据集列表失败: {str(e)}", exc_info=True)
+        raise DatabaseException(message="获取数据集列表失败")
 
-@app.post("/train", response_model=APIResponse)
-async def start_training(request: TrainingRequest):
+@app.post("/train")
+async def start_training(request: TrainingRequest, background_tasks: BackgroundTasks):
     try:
         # 获取数据集信息
         with get_session() as session:
             ds = session.get(DatasetORM, request.dataset_id)
             if not ds:
-                raise HTTPException(status_code=404, detail="数据集未找到")
+                raise DatasetNotFoundException("数据集未找到")
             file_path = ds.file_path
         
-        # 读取数据
-        df = pd.read_csv(file_path)
-        texts = df['text'].tolist()
-        labels = df['label'].tolist()
-        
-        # 加载模型和分词器
-        model, tokenizer = load_model_and_tokenizer()
-        
-        # 创建数据集和数据加载器
-        dataset = TextDataset(texts, labels, tokenizer)
-        dataloader = DataLoader(dataset, batch_size=request.batch_size, shuffle=True)
-        
-        # 设置优化器
-        optimizer = AdamW(model.parameters(), lr=request.learning_rate)
-        
-        # 训练模型
-        model.train()
-        for epoch in range(request.epochs):
-            for batch in dataloader:
-                optimizer.zero_grad()
-                outputs = model(
-                    input_ids=batch['input_ids'],
-                    attention_mask=batch['attention_mask'],
-                    labels=batch['labels']
-                )
-                loss = outputs.loss
-                loss.backward()
-                optimizer.step()
-        
-        # 保存模型
-        model_save_path = f"{MODEL_PATH}/model_{request.dataset_id}_{int(datetime.now().timestamp())}"
-        model.save_pretrained(model_save_path)
-        tokenizer.save_pretrained(model_save_path)
-        
-        # 更新训练任务（ORM）
+        # 创建训练任务记录
         with get_session() as session:
             job = TrainingJobORM(
                 dataset_id=request.dataset_id,
-                status='completed',
-                model_name=model_save_path,
+                status='pending',
+                model_name="",  # 将在训练完成后更新
                 epochs=request.epochs,
                 learning_rate=request.learning_rate,
                 batch_size=request.batch_size,
-                started_at=datetime.utcnow(),
-                completed_at=datetime.utcnow(),
+                started_at=datetime.utcnow()
             )
             session.add(job)
             session.flush()  # 获取自增ID
             job_id = job.id
         
-        return APIResponse(
-            code=200,
-            message="训练完成",
+        # 启动后台训练任务
+        background_tasks.add_task(
+            train_model_task,
+            job_id=job_id,
+            dataset_id=request.dataset_id,
+            epochs=request.epochs,
+            learning_rate=request.learning_rate,
+            batch_size=request.batch_size
+        )
+        
+        return APIResponse.success(
+            message="训练任务已提交",
             data={
-                "status": "completed",
+                "status": "pending",
                 "job_id": job_id
             }
         )
+    except DatasetNotFoundException as e:
+        logger.error(f"训练失败: {str(e)}", exc_info=True)
+        raise
     except Exception as e:
-        error_message = str(e)
-        return APIResponse(
-            code=500,
-            message=f"训练失败: {error_message}",
-            data=None
-        )
+        logger.error(f"训练失败: {str(e)}", exc_info=True)
+        raise InternalServerException(message=f"训练失败: {str(e)}")
 
-@app.get("/train/status", response_model=APIResponse)
+@app.get("/train/status")
 async def get_training_status():
     try:
         with get_session() as session:
             # 获取最近的训练任务
-            job = session.exec(select(TrainingJobORM).order_by(desc(TrainingJobORM.id)).limit(1)).first()
+            job = session.exec(select(TrainingJobORM).order_by(TrainingJobORM.id.desc()).limit(1)).first()
             
             if not job:
-                return APIResponse(
-                    code=200,
+                return APIResponse.success(
                     message="没有训练记录",
                     data={"status": "ready", "job_id": None}
                 )
             
-            return APIResponse(
-                code=200,
+            return APIResponse.success(
                 message=f"训练状态: {job.status}",
                 data={
                     "status": job.status,
-                    "job_id": job.id
+                    "job_id": job.id,
+                    "progress": job.progress if hasattr(job, 'progress') else 0
                 }
             )
     except Exception as e:
-        return APIResponse(
-            code=500,
-            message=f"获取训练状态失败: {str(e)}",
-            data=None
-        )
+        logger.error(f"获取训练状态失败: {str(e)}", exc_info=True)
+        raise InternalServerException(message="获取训练状态失败")
 
 @app.post("/train/stop", response_model=APIResponse)
 async def stop_training(request: dict):
@@ -497,11 +601,14 @@ async def stop_training(request: dict):
             data=None
         )
 
-@app.post("/predict", response_model=APIResponse)
+@app.post("/predict")
 async def predict(request: PredictionRequest):
     try:
-        # 加载最新的模型和分词器（简化实现）
-        model, tokenizer = load_model_and_tokenizer()
+        # 加载模型和分词器
+        try:
+            model, tokenizer = get_model(request.model_id)
+        except Exception as e:
+            raise ModelNotFoundException(f"加载模型失败: {str(e)}")
         
         # 编码输入文本
         inputs = tokenizer(
@@ -520,34 +627,33 @@ async def predict(request: PredictionRequest):
             predicted_class = torch.argmax(predictions, dim=-1).item()
             confidence = predictions[0][predicted_class].item()
         
-        return APIResponse(
-            code=200,
+        # 构建响应
+        class_names = ["负面", "正面"]
+        result = {
+            "text": request.text,
+            "predicted_class": class_names[predicted_class],
+            "confidence": confidence
+        }
+        
+        return APIResponse.success(
             message="预测成功",
-            data={
-                "text": request.text,
-                "predicted_class": predicted_class,
-                "confidence": confidence
-            }
+            data=result
         )
+    except ModelNotFoundException as e:
+        logger.error(f"预测失败: {str(e)}", exc_info=True)
+        raise
     except Exception as e:
-        return APIResponse(
-            code=500,
-            message=f"预测失败: {str(e)}",
-            data=None
-        )
+        logger.error(f"预测失败: {str(e)}", exc_info=True)
+        raise InternalServerException(message="预测失败")
 
-@app.get("/dataset/preview/{dataset_id}", response_model=APIResponse)
+@app.get("/dataset/preview/{dataset_id}")
 async def preview_dataset(dataset_id: int, limit: int = 10):
     try:
         # 获取数据集信息
         with get_session() as session:
             ds = session.get(DatasetORM, dataset_id)
             if not ds:
-                return APIResponse(
-                    code=404,
-                    message=f"数据集 ID {dataset_id} 不存在",
-                    data=None
-                )
+                raise DatasetNotFoundException(f"数据集 ID {dataset_id} 不存在")
             
             # 读取CSV文件
             import pandas as pd
@@ -555,16 +661,11 @@ async def preview_dataset(dataset_id: int, limit: int = 10):
                 df = pd.read_csv(ds.file_path)
                 # 检查必要的列是否存在
                 if 'text' not in df.columns or 'label' not in df.columns:
-                    return APIResponse(
-                        code=400,
-                        message="数据集格式错误：缺少必要的列（text 和 label）",
-                        data=None
-                    )
+                    raise InvalidParamsException("数据集格式错误：缺少必要的列（text 和 label）")
                 
                 # 获取前N行数据
                 preview_data = df.head(limit).to_dict('records')
-                return APIResponse(
-                    code=200,
+                return APIResponse.success(
                     message="获取数据集预览成功",
                     data={
                         "preview": preview_data,
@@ -577,17 +678,15 @@ async def preview_dataset(dataset_id: int, limit: int = 10):
                     }
                 )
             except Exception as e:
-                return APIResponse(
-                    code=500,
-                    message=f"读取数据集文件失败：{str(e)}",
-                    data=None
-                )
+                logger.error(f"读取数据集文件失败：{str(e)}", exc_info=True)
+                raise InternalServerException(message=f"读取数据集文件失败")
+    except (DatasetNotFoundException, InvalidParamsException) as e:
+        # 这些异常已经在上面抛出
+        logger.error(f"获取数据集预览失败：{str(e)}", exc_info=True)
+        raise
     except Exception as e:
-        return APIResponse(
-            code=500,
-            message=f"获取数据集预览失败：{str(e)}",
-            data=None
-        )
+        logger.error(f"获取数据集预览失败：{str(e)}", exc_info=True)
+        raise InternalServerException(message="获取数据集预览失败")
 
 # 训练函数，将在后台运行
 async def train_model_task(job_id: int, dataset_id: int, epochs: int, learning_rate: float, batch_size: int):

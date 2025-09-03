@@ -6,6 +6,7 @@ import UploadView from './views/UploadView.vue' // 数据上传页面
 import DatasetsView from './views/DatasetsView.vue' // 数据集管理页面
 import TrainingView from './views/TrainingView.vue' // 模型训练页面
 import PredictionView from './views/PredictionView.vue' // 模型推理页面
+import ErrorPage from './views/ErrorPage.vue' // 错误页面
 
 // 定义路由配置数组
 const routes = [
@@ -35,9 +36,15 @@ const routes = [
     component: PredictionView
   },
   {
+    path: '/error/:type',
+    name: 'error',
+    component: ErrorPage,
+    props: true
+  },
+  {
     path: '/:pathMatch(.*)*', // 通配符路径，匹配所有未定义的路由
     name: 'not-found',
-    redirect: '/' // 重定向到首页
+    redirect: '/error/404' // 重定向到404错误页面
   }
 ]
 
