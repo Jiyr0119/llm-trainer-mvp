@@ -1,6 +1,6 @@
 <template>
   <div class="forgot-password-container">
-    <div class="forgot-password-background"></div>
+    <div class="forgot-password-background" style="opacity: 0.8;"></div>
     <div class="forgot-password-content">
       <div class="brand-logo">
         <img src="../assets/logo.svg" alt="LLM Trainer Logo" class="logo" />

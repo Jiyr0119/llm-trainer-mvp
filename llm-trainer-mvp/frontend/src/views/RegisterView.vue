@@ -1,6 +1,6 @@
 <template>
   <div class="register-container">
-    <div class="register-background"></div>
+    <div class="register-background" style="opacity: 0.8;"></div>
     <div class="register-content">
       <div class="brand-logo">
         <img src="../assets/logo.svg" alt="LLM Trainer Logo" class="logo" />

@@ -1,6 +1,6 @@
 <template>
   <div class="login-container">
-    <div class="login-background"></div>
+    <div class="login-background" style="opacity: 0.8;"></div>
     <div class="login-content">
       <div class="brand-logo">
         <img src="../assets/logo.svg" alt="LLM Trainer Logo" class="logo" />
