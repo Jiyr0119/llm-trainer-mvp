@@ -45,7 +45,6 @@ async def start_training(
 
 
 @router.get("/status/{job_id}", response_model=TrainingStatusResponse)
-@standardized_response("获取训练状态成功")
 async def get_training_status(job_id: int):
     """
     获取训练任务状态

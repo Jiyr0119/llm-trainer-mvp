@@ -139,7 +139,6 @@ class TrainingService:
                     "epochs": job.epochs,
                     "learning_rate": job.learning_rate,
                     "batch_size": job.batch_size,
-                    "description": job.description,
                     "logs": logs
                 }
                 
@@ -266,8 +265,25 @@ class TrainingService:
                 
                 results = session.exec(statement).all()
                 
-                logger.info(f"获取训练任务列表成功: 共{len(results)}个任务")
-                return results
+                # 创建新的对象列表，避免会话关闭后的DetachedInstanceError
+                jobs = []
+                for job in results:
+                    jobs.append(TrainingJob(
+                        id=job.id,
+                        dataset_id=job.dataset_id,
+                        status=job.status,
+                        model_name=job.model_name,
+                        epochs=job.epochs,
+                        learning_rate=job.learning_rate,
+                        batch_size=job.batch_size,
+                        progress=job.progress,
+                        log_file=job.log_file,
+                        started_at=job.started_at,
+                        completed_at=job.completed_at
+                    ))
+                
+                logger.info(f"获取训练任务列表成功: 共{len(jobs)}个任务")
+                return jobs
             
         except Exception as e:
             logger.error(f"获取训练任务列表失败: {str(e)}")
