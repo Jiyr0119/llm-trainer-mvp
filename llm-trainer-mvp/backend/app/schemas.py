@@ -16,6 +16,9 @@ class TokenData(BaseModel):
     user_id: Optional[int] = None
     role: Optional[str] = None
     exp: Optional[datetime] = None
+    type: Optional[str] = None  # 令牌类型：access 或 refresh
+    iat: Optional[datetime] = None  # 令牌发行时间
+    jti: Optional[str] = None  # JWT ID，用于刷新令牌
 
 # 用户相关模型
 class UserBase(BaseModel):

@@ -26,7 +26,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    # 如果没有指定令牌类型，则添加默认类型
+    if "type" not in to_encode:
+        to_encode.update({"type": "access"})
+    # 添加过期时间和发行时间
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow()
+    })
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 

@@ -56,7 +56,12 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire})
+    # 添加令牌类型和发行时间
+    to_encode.update({
+        "exp": expire,
+        "type": "refresh",
+        "iat": datetime.utcnow()
+    })
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
@@ -70,15 +75,39 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     )
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # 验证令牌类型
+        token_type = payload.get("type")
+        if token_type and token_type == "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="使用刷新令牌访问API是不允许的",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
         username: str = payload.get("sub")
-        if username is None:
+        user_id: int = payload.get("id")
+        role: str = payload.get("role")
+        exp = payload.get("exp")
+        
+        if username is None or user_id is None:
             raise credentials_exception
-        token_data = TokenData(username=username)
-    except PyJWTError:
-        raise credentials_exception
+            
+        token_data = TokenData(username=username, user_id=user_id, role=role, exp=datetime.fromtimestamp(exp) if exp else None)
+    except PyJWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"无效的认证凭据: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
     user = get_user_by_username(db, username=token_data.username)
     if user is None:
         raise credentials_exception
+        
+    # 验证用户ID是否匹配
+    if user.id != token_data.user_id:
+        raise credentials_exception
+        
     return user
 
 # 获取当前活跃用户
@@ -153,11 +182,22 @@ def login_for_access_token(form_data: LoginRequest, db: Session = Depends(get_se
     # 创建访问令牌和刷新令牌
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username, "id": user.id, "role": user.role},
+        data={
+            "sub": user.username, 
+            "id": user.id, 
+            "role": user.role,
+            "type": "access",
+            "iat": datetime.utcnow().timestamp()
+        },
         expires_delta=access_token_expires,
     )
     refresh_token = create_refresh_token(
-        data={"sub": user.username, "id": user.id, "role": user.role},
+        data={
+            "sub": user.username, 
+            "id": user.id, 
+            "role": user.role,
+            "jti": f"{user.id}-{datetime.utcnow().timestamp()}"
+        },
     )
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
@@ -200,24 +240,56 @@ def refresh_token(refresh_token_data: RefreshTokenRequest, db: Session = Depends
     )
     try:
         payload = jwt.decode(refresh_token_data.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        # 验证令牌类型
+        token_type = payload.get("type")
+        if token_type and token_type != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="提供的不是有效的刷新令牌",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
         username: str = payload.get("sub")
-        if username is None:
+        user_id: int = payload.get("id")
+        role: str = payload.get("role")
+        jti: str = payload.get("jti")
+        
+        if username is None or user_id is None:
             raise credentials_exception
-    except PyJWTError:
-        raise credentials_exception
+    except PyJWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"无效的刷新令牌: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     
     user = get_user_by_username(db, username=username)
     if user is None:
+        raise credentials_exception
+        
+    # 验证用户ID是否匹配
+    if user.id != user_id:
         raise credentials_exception
     
     # 创建新的访问令牌和刷新令牌
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username, "id": user.id, "role": user.role},
+        data={
+            "sub": user.username, 
+            "id": user.id, 
+            "role": user.role,
+            "type": "access",
+            "iat": datetime.utcnow().timestamp()
+        },
         expires_delta=access_token_expires,
     )
     new_refresh_token = create_refresh_token(
-        data={"sub": user.username, "id": user.id, "role": user.role},
+        data={
+            "sub": user.username, 
+            "id": user.id, 
+            "role": user.role,
+            "jti": f"{user.id}-{datetime.utcnow().timestamp()}"
+        },
     )
     return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
 

@@ -25,7 +25,11 @@
         <el-icon><Upload /></el-icon>
         <span>数据上传</span>
       </el-menu-item>
-      <el-menu-item v-if="authStore.isLoggedIn" index="/datasets">
+      <el-menu-item v-if="authStore.isLoggedIn && authStore.isAdmin" index="/admin">
+        <el-icon><Setting /></el-icon>
+        <span>用户管理</span>
+      </el-menu-item>
+      <el-menu-item v-if="authStore.isLoggedIn && authStore.isAdmin" index="/datasets">
         <el-icon><Files /></el-icon>
         <span>数据集管理</span>
       </el-menu-item>
@@ -95,6 +99,7 @@ import { useRouter, useRoute } from 'vue-router'
 import EnvInfo from './EnvInfo.vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
+import { Setting } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()

@@ -11,6 +11,7 @@ import LoginView from './views/LoginView.vue' // 登录页面
 import RegisterView from './views/RegisterView.vue' // 注册页面
 import ProfileView from './views/ProfileView.vue' // 个人资料页面
 import ForgotPasswordView from './views/ForgotPasswordView.vue' // 忘记密码页面
+import AdminView from './views/AdminView.vue' // 管理员控制面板页面
 
 // 定义路由配置数组
 const routes = [
@@ -51,10 +52,16 @@ const routes = [
     meta: { requiresAuth: true } // 需要认证
   },
   {
+    path: '/admin',
+    name: 'admin',
+    component: AdminView,
+    meta: { requiresAuth: true, requiresAdmin: true } // 需要认证和管理员权限
+  },
+  {
     path: '/datasets',
     name: 'datasets',
     component: DatasetsView,
-    meta: { requiresAuth: true } // 需要认证
+    meta: { requiresAuth: true, requiresAdmin: true } // 需要认证和管理员权限
   },
   {
     path: '/train',
@@ -96,26 +103,68 @@ const router = createRouter({
 // 导入认证服务
 import authService from './services/auth'
 
+// 导入Pinia存储
+import { useAuthStore } from './store/auth'
+
 // 全局前置守卫：在路由跳转前执行
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   // to: 即将进入的目标路由对象
   // from: 当前导航正要离开的路由对象
   // next: 函数，必须调用该方法来解析这个钩子
   
+  // 获取认证存储
+  const authStore = useAuthStore()
+  
   // 检查路由是否需要认证
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
+  // 检查路由是否需要管理员权限
+  const requiresAdmin = to.matched.some(record => record.meta.requiresAdmin)
   
   // 如果需要认证，检查用户是否已登录
-  if (requiresAuth && !authService.isLoggedIn()) {
+  if (requiresAuth && !authStore.isLoggedIn) {
     // 未登录，重定向到登录页面，并传递原目标路由作为查询参数
     next({
       path: '/login',
       query: { redirect: to.fullPath }
     })
-  } else {
-    // 不需要认证或已登录，继续导航
-    next()
+    return
   }
+  
+  // 如果需要管理员权限，检查用户是否为管理员
+  if (requiresAdmin) {
+    // 如果用户信息不存在，先获取用户信息
+    if (!authStore.currentUser) {
+      try {
+        await authStore.fetchUserInfo()
+      } catch (error) {
+        console.error('获取用户信息失败:', error)
+        // 获取用户信息失败，可能是token过期，尝试刷新token
+        try {
+          await authStore.refreshToken()
+          await authStore.fetchUserInfo()
+        } catch (refreshError) {
+          // 刷新token也失败，清除登录状态并重定向到登录页面
+          console.error('刷新token失败:', refreshError)
+          authStore.logout()
+          next({
+            path: '/login',
+            query: { redirect: to.fullPath }
+          })
+          return
+        }
+      }
+    }
+    
+    // 检查用户是否为管理员
+    if (!authStore.isAdmin) {
+      // 不是管理员，重定向到403错误页面
+      next({ path: '/error/403' })
+      return
+    }
+  }
+  
+  // 不需要认证或已登录且权限满足，继续导航
+  next()
 })
 
 export default router

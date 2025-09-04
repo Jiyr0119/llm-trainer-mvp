@@ -1,9 +1,38 @@
 // 用户认证状态管理 - Pinia版本
 import { defineStore } from 'pinia'
 import authService from '../services/auth'
+import router from '../router'
+
+// 添加令牌刷新失败事件监听
+const setupTokenRefreshFailedListener = (store) => {
+  const handleTokenRefreshFailed = (event) => {
+    const errorDetail = event.detail?.error || '令牌刷新失败'
+    console.log('令牌刷新失败事件触发:', errorDetail)
+    // 清除认证状态
+    store.clearAuth()
+    // 重定向到登录页
+    router.push('/login')
+  }
+  
+  // 添加事件监听
+  window.addEventListener('auth-token-refresh-failed', handleTokenRefreshFailed)
+  
+  // 返回清理函数
+  return () => {
+    window.removeEventListener('auth-token-refresh-failed', handleTokenRefreshFailed)
+  }
+}
 
 // 定义auth存储
 export const useAuthStore = defineStore('auth', {
+  // 在创建store时初始化事件监听
+  hydrate(storeState, initialState) {
+    // 设置令牌刷新失败事件监听
+    const cleanupListener = setupTokenRefreshFailedListener(this)
+    
+    // 在应用卸载时清理事件监听
+    window.addEventListener('beforeunload', cleanupListener)
+  },
   // 状态
   state: () => ({
     token: authService.getAccessToken(), // 从本地存储获取token
@@ -128,13 +157,18 @@ export const useAuthStore = defineStore('auth', {
       try {
         const data = await authService.refreshToken(this.refreshToken)
         // 保存新token
-        authService.saveTokens(data.access_token, this.refreshToken)
+        authService.saveTokens(data.access_token, data.refresh_token)
         // 更新状态
         this.setToken(data.access_token)
+        this.setRefreshToken(data.refresh_token)
         return data.access_token
       } catch (error) {
         // 刷新失败，清除认证状态
         this.clearAuth()
+        // 如果不是在axios拦截器中，则重定向到登录页
+        if (!error.isAxiosRefreshError) {
+          router.push('/login')
+        }
         throw error
       }
     },

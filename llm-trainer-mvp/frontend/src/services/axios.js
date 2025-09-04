@@ -28,13 +28,77 @@ axiosInstance.interceptors.request.use(
   }
 )
 
+// 是否正在刷新令牌的标志
+let isRefreshing = false;
+// 等待令牌刷新的请求队列
+let refreshSubscribers = [];
+
+// 将请求添加到队列
+const subscribeTokenRefresh = (cb) => refreshSubscribers.push(cb);
+
+// 执行队列中的请求
+const onRefreshed = (token) => {
+  refreshSubscribers.forEach(cb => cb(token));
+  refreshSubscribers = [];
+};
+
+// 刷新令牌
+const refreshToken = async () => {
+  try {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) {
+      throw new Error('刷新令牌不可用');
+    }
+    
+    // 直接使用axios而不是axiosInstance，避免循环调用拦截器
+    const response = await axios.post(
+      `${import.meta.env.VITE_APP_API_URL || 'http://localhost:8001'}/auth/refresh`,
+      { refresh_token: refreshToken },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    
+    // 检查响应格式
+    if (!response.data || !response.data.access_token || !response.data.refresh_token) {
+      throw new Error('刷新令牌响应格式无效');
+    }
+    
+    const { access_token, refresh_token } = response.data;
+    localStorage.setItem('access_token', access_token);
+    localStorage.setItem('refresh_token', refresh_token);
+    
+    return access_token;
+  } catch (error) {
+    // 记录详细错误信息
+    console.error('刷新令牌失败:', error);
+    
+    // 检查是否有响应数据
+    if (error.response && error.response.data) {
+      console.error('刷新令牌错误详情:', error.response.data);
+    }
+    
+    // 刷新令牌失败，清除所有令牌
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    
+    // 触发自定义事件，通知应用程序令牌刷新失败
+    window.dispatchEvent(new CustomEvent('auth-token-refresh-failed', {
+      detail: { error: error.message || '刷新令牌失败' }
+    }));
+    
+    throw error;
+  }
+};
+
 // 响应拦截器
 axiosInstance.interceptors.response.use(
   (response) => {
     // 如果响应成功，直接返回数据
     return response.data;
   },
-  (error) => {
+  async (error) => {
+    // 获取原始请求配置
+    const originalRequest = error.config;
+    
     // 处理HTTP错误
     let errorMessage = '未知错误';
     let errorCode = 'UNKNOWN_ERROR';
@@ -43,6 +107,60 @@ axiosInstance.interceptors.response.use(
     if (error.response) {
       // 服务器返回了错误状态码和数据
       const { status, data } = error.response;
+      
+      // 处理401错误（未授权）- 可能是令牌过期或令牌类型错误
+      if (status === 401 && !originalRequest._retry) {
+        // 检查错误消息是否与令牌类型相关
+        const isTokenTypeError = data && 
+          (data.message?.includes('token type') || 
+           data.message?.includes('令牌类型') || 
+           data.code === 'INVALID_TOKEN_TYPE');
+        
+        // 如果是令牌类型错误，直接清除令牌并重定向到登录页面
+        if (isTokenTypeError) {
+          console.error('令牌类型错误:', data.message);
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          window.location.href = '/login';
+          return Promise.reject(error);
+        }
+        
+        // 标记该请求已尝试过重试，避免无限循环
+        originalRequest._retry = true;
+        
+        // 如果当前没有其他请求正在刷新令牌
+        if (!isRefreshing) {
+          isRefreshing = true;
+          
+          try {
+            // 尝试刷新令牌
+            const newToken = await refreshToken();
+            
+            // 更新原始请求的Authorization头
+            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+            
+            // 通知所有等待的请求
+            onRefreshed(newToken);
+            
+            // 重试原始请求
+            return axiosInstance(originalRequest);
+          } catch (refreshError) {
+            // 刷新令牌失败，重定向到登录页面
+            window.location.href = '/login';
+            return Promise.reject(refreshError);
+          } finally {
+            isRefreshing = false;
+          }
+        } else {
+          // 如果已经有请求正在刷新令牌，将当前请求加入队列
+          return new Promise(resolve => {
+            subscribeTokenRefresh(token => {
+              originalRequest.headers['Authorization'] = `Bearer ${token}`;
+              resolve(axiosInstance(originalRequest));
+            });
+          });
+        }
+      }
       
       // 优先使用后端返回的错误信息和错误码
       if (data && data.code) {

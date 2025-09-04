@@ -13,29 +13,63 @@
       
       <el-form v-else :model="profileForm" :rules="rules" ref="profileFormRef" label-position="top">
         <el-form-item label="用户名">
-          <el-input v-model="profileForm.username" disabled></el-input>
+          <el-input v-model="profileForm.username" disabled>
+            <template #prefix>
+              <el-icon><User /></el-icon>
+            </template>
+          </el-input>
         </el-form-item>
         
         <el-form-item label="邮箱" prop="email">
-          <el-input v-model="profileForm.email"></el-input>
+          <el-input v-model="profileForm.email">
+            <template #prefix>
+              <el-icon><Message /></el-icon>
+            </template>
+          </el-input>
         </el-form-item>
         
         <el-form-item label="姓名" prop="full_name">
-          <el-input v-model="profileForm.full_name"></el-input>
+          <el-input v-model="profileForm.full_name">
+            <template #prefix>
+              <el-icon><UserFilled /></el-icon>
+            </template>
+          </el-input>
         </el-form-item>
         
         <el-form-item label="角色">
-          <el-input v-model="profileForm.role" disabled></el-input>
+          <el-input v-model="profileForm.role" disabled>
+            <template #prefix>
+              <el-icon><Avatar /></el-icon>
+            </template>
+          </el-input>
         </el-form-item>
         
         <el-divider>修改密码</el-divider>
         
         <el-form-item label="新密码" prop="password">
-          <el-input v-model="profileForm.password" type="password" placeholder="留空表示不修改"></el-input>
+          <el-input v-model="profileForm.password" :type="passwordVisible ? 'text' : 'password'" placeholder="留空表示不修改">
+            <template #prefix>
+              <el-icon><Lock /></el-icon>
+            </template>
+            <template #suffix>
+              <el-icon @click="passwordVisible = !passwordVisible" class="cursor-pointer">
+                <component :is="passwordVisible ? 'View' : 'Hide'" />
+              </el-icon>
+            </template>
+          </el-input>
         </el-form-item>
         
         <el-form-item label="确认新密码" prop="confirmPassword">
-          <el-input v-model="profileForm.confirmPassword" type="password" placeholder="留空表示不修改"></el-input>
+          <el-input v-model="profileForm.confirmPassword" :type="confirmPasswordVisible ? 'text' : 'password'" placeholder="留空表示不修改">
+            <template #prefix>
+              <el-icon><Lock /></el-icon>
+            </template>
+            <template #suffix>
+              <el-icon @click="confirmPasswordVisible = !confirmPasswordVisible" class="cursor-pointer">
+                <component :is="confirmPasswordVisible ? 'View' : 'Hide'" />
+              </el-icon>
+            </template>
+          </el-input>
         </el-form-item>
         
         <el-form-item>
@@ -51,11 +85,14 @@
 import { ref, reactive, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../store/auth';
+import { User, UserFilled, Message, Avatar, Lock, View, Hide } from '@element-plus/icons-vue';
 
 const authStore = useAuthStore();
 const profileFormRef = ref(null);
 const loading = ref(true);
 const saving = ref(false);
+const passwordVisible = ref(false);
+const confirmPasswordVisible = ref(false);
 
 const profileForm = reactive({
   username: '',
@@ -174,23 +211,65 @@ onMounted(() => {
 
 <style scoped>
 .profile-container {
-  display: flex;
-  justify-content: center;
-  padding: 20px;
+  max-width: 600px;
+  margin: 30px auto;
+  padding: 0 20px;
 }
 
 .profile-card {
-  width: 100%;
-  max-width: 600px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.profile-card:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
 }
 
 .card-header {
   display: flex;
-  justify-content: center;
-  margin-bottom: 20px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.card-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #303133;
 }
 
 .loading-container {
-  padding: 20px;
+  padding: 20px 0;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+:deep(.el-form-item__label) {
+  font-weight: 500;
+}
+
+:deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px #dcdfe6 inset;
+  transition: all 0.2s;
+}
+
+:deep(.el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px #c0c4cc inset;
+}
+
+:deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset !important;
+}
+
+:deep(.el-divider__text) {
+  font-size: 16px;
+  font-weight: 500;
+  color: #606266;
 }
 </style>
