@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 from datetime import datetime, timedelta
@@ -10,6 +10,7 @@ from app.db import get_session
 from app.models import User, UserRole, verify_password, get_password_hash, create_access_token
 from app.schemas import UserCreate, UserResponse, UserUpdate, Token, TokenData, LoginRequest, RefreshTokenRequest
 from app.core.config import settings
+from app.core.response import APIResponse
 
 # 创建路由器
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -163,15 +164,40 @@ def register_user(user: UserCreate, db: Session = Depends(get_session)):
     return db_user
 
 # 用户登录
-@router.post("/login", response_model=Token)
-def login_for_access_token(form_data: LoginRequest, db: Session = Depends(get_session)):
-    """用户登录"""
-    user = authenticate_user(db, form_data.username, form_data.password)
-    if not user:
+@router.post("/login")
+def login_for_access_token(
+    db: Session = Depends(get_session),
+    form_data: OAuth2PasswordRequestForm = Depends(None),
+    credentials: dict = Body(None)
+):
+    """用户登录（支持表单和JSON格式）
+    
+    可以通过两种方式登录：
+    1. 表单格式：使用OAuth2PasswordRequestForm
+    2. JSON格式：直接发送包含username和password的JSON数据
+    """
+    # 确定使用哪种登录方式
+    if credentials and "username" in credentials and "password" in credentials:
+        # JSON格式登录
+        login_username = credentials["username"]
+        login_password = credentials["password"]
+    elif form_data:
+        # 表单格式登录
+        login_username = form_data.username
+        login_password = form_data.password
+    else:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="请提供用户名和密码"
+        )
+    
+    user = authenticate_user(db, login_username, login_password)
+    if not user:
+        # 使用标准错误响应格式
+        return APIResponse.error(
+            message="用户名或密码错误",
+            code=10003,
+            data=None
         )
     
     # 更新最后登录时间
@@ -199,18 +225,41 @@ def login_for_access_token(form_data: LoginRequest, db: Session = Depends(get_se
             "jti": f"{user.id}-{datetime.utcnow().timestamp()}"
         },
     )
-    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+    
+    # 使用标准成功响应格式
+    return APIResponse.success(
+        data={
+            "access_token": access_token, 
+            "refresh_token": refresh_token, 
+            "token_type": "bearer"
+        },
+        message="登录成功",
+        code=200
+    )
+
+
+# 为了向后兼容，保留/login/json路径，但重定向到统一的登录接口
+@router.post("/login/json")
+def login_with_json(login_data: LoginRequest, db: Session = Depends(get_session)):
+    """用户登录（JSON格式）- 为了向后兼容而保留"""
+    # 直接调用统一的登录接口
+    return login_for_access_token(
+        db=db,
+        form_data=None,
+        credentials={"username": login_data.username, "password": login_data.password}
+    )
 
 # OAuth2兼容的登录端点
-@router.post("/token", response_model=Token)
+@router.post("/token")
 def login_oauth2(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_session)):
     """OAuth2兼容的登录端点"""
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误",
-            headers={"WWW-Authenticate": "Bearer"},
+        # 使用标准错误响应格式
+        return APIResponse.error(
+            message="用户名或密码错误",
+            code=10003,
+            data=None
         )
     
     # 更新最后登录时间
@@ -227,26 +276,31 @@ def login_oauth2(form_data: OAuth2PasswordRequestForm = Depends(), db: Session =
     refresh_token = create_refresh_token(
         data={"sub": user.username, "id": user.id, "role": user.role},
     )
-    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+    
+    # 使用标准成功响应格式
+    return APIResponse.success(
+        data={
+            "access_token": access_token, 
+            "refresh_token": refresh_token, 
+            "token_type": "bearer"
+        },
+        message="登录成功",
+        code=200
+    )
 
 # 刷新令牌
-@router.post("/refresh", response_model=Token)
+@router.post("/refresh")
 def refresh_token(refresh_token_data: RefreshTokenRequest, db: Session = Depends(get_session)):
     """刷新令牌"""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无效的刷新令牌",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
     try:
         payload = jwt.decode(refresh_token_data.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         # 验证令牌类型
         token_type = payload.get("type")
         if token_type and token_type != "refresh":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="提供的不是有效的刷新令牌",
-                headers={"WWW-Authenticate": "Bearer"},
+            return APIResponse.error(
+                message="提供的不是有效的刷新令牌",
+                code=10004,
+                data=None
             )
             
         username: str = payload.get("sub")
@@ -255,21 +309,33 @@ def refresh_token(refresh_token_data: RefreshTokenRequest, db: Session = Depends
         jti: str = payload.get("jti")
         
         if username is None or user_id is None:
-            raise credentials_exception
+            return APIResponse.error(
+                message="无效的刷新令牌",
+                code=10005,
+                data=None
+            )
     except PyJWTError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"无效的刷新令牌: {str(e)}",
-            headers={"WWW-Authenticate": "Bearer"},
+        return APIResponse.error(
+            message=f"无效的刷新令牌: {str(e)}",
+            code=10006,
+            data=None
         )
     
     user = get_user_by_username(db, username=username)
     if user is None:
-        raise credentials_exception
+        return APIResponse.error(
+            message="用户不存在",
+            code=10007,
+            data=None
+        )
         
     # 验证用户ID是否匹配
     if user.id != user_id:
-        raise credentials_exception
+        return APIResponse.error(
+            message="用户ID不匹配",
+            code=10008,
+            data=None
+        )
     
     # 创建新的访问令牌和刷新令牌
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -291,7 +357,17 @@ def refresh_token(refresh_token_data: RefreshTokenRequest, db: Session = Depends
             "jti": f"{user.id}-{datetime.utcnow().timestamp()}"
         },
     )
-    return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
+    
+    # 使用标准成功响应格式
+    return APIResponse.success(
+        data={
+            "access_token": access_token, 
+            "refresh_token": new_refresh_token, 
+            "token_type": "bearer"
+        },
+        message="令牌刷新成功",
+        code=200
+    )
 
 # 获取当前用户信息
 @router.get("/me", response_model=UserResponse)

@@ -10,14 +10,18 @@
     >
       <!-- Logo和品牌名称 -->
       <div class="brand">
-        <router-link to="/" class="brand-link">
+        <router-link :to="authStore.isLoggedIn ? '/home' : '/'" class="brand-link">
           <img src="../assets/logo.svg" alt="LLM Trainer Logo" class="brand-logo" />
           <span class="brand-name">LLM训练平台</span>
         </router-link>
       </div>
       
       <!-- 各个导航菜单项，index属性对应路由路径 -->
-      <el-menu-item index="/">
+      <el-menu-item v-if="!authStore.isLoggedIn" index="/">
+        <el-icon><HomeFilled /></el-icon>
+        <span>首页</span>
+      </el-menu-item>
+      <el-menu-item v-if="authStore.isLoggedIn" index="/home">
         <el-icon><HomeFilled /></el-icon>
         <span>首页</span>
       </el-menu-item>
@@ -34,7 +38,7 @@
         <span>数据集管理</span>
       </el-menu-item>
       <el-menu-item v-if="authStore.isLoggedIn" index="/train">
-        <el-icon><CPU /></el-icon>
+        <el-icon><Setting /></el-icon>
         <span>模型训练</span>
       </el-menu-item>
       <el-menu-item v-if="authStore.isLoggedIn" index="/predict">
@@ -99,7 +103,7 @@ import { useRouter, useRoute } from 'vue-router'
 import EnvInfo from './EnvInfo.vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
-import { Setting } from '@element-plus/icons-vue'
+import { Setting, HomeFilled, Upload, Files, DataAnalysis, User, Plus, ArrowDown, UserFilled, SwitchButton } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()

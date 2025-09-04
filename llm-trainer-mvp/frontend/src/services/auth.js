@@ -21,8 +21,13 @@ const authService = {
   },
 
   // 用户登录
-  login(username, password) {
-    return handleResponse(axiosInstance.post('/api/auth/login', { username, password }));
+  login(credentials) {
+    // 使用表单格式发送登录请求
+    const formData = new FormData();
+    formData.append('username', credentials.username);
+    formData.append('password', credentials.password);
+    
+    return handleResponse(axiosInstance.post('/api/auth/login', formData));
   },
 
   // 刷新令牌

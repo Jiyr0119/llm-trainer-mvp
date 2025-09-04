@@ -46,7 +46,7 @@ def init_db() -> None:
 # 创建数据库会话的上下文管理器
 # 使用contextmanager装饰器简化上下文管理
 @contextmanager
-def get_session() -> Iterator[Session]:
+def get_db_context() -> Iterator[Session]:
     # 创建新的数据库会话
     session = Session(engine)
     try:
@@ -67,6 +67,18 @@ def get_session() -> Iterator[Session]:
         raise
     finally:
         # 无论如何都确保关闭会话，释放资源
+        session.close()
+
+# 为FastAPI依赖注入创建数据库会话
+def get_session():
+    session = Session(engine)
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
         session.close()
 
 

@@ -23,7 +23,7 @@
             </div>
             <div class="feature-item">
               <div class="feature-icon train-icon">
-                <el-icon><CPU /></el-icon>
+                <el-icon><Setting /></el-icon>
               </div>
               <div class="feature-text">
                 <h3>使用BERT模型进行微调训练</h3>
@@ -56,7 +56,7 @@
             开始上传数据集
           </el-button>
           <el-button @click="goToTraining" class="action-btn train-btn">
-            <el-icon><CPU /></el-icon>
+            <el-icon><Setting /></el-icon>
             查看训练功能
           </el-button>
           <el-button @click="goToPrediction" class="action-btn predict-btn">
@@ -71,6 +71,7 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { Upload, Setting, DataAnalysis } from '@element-plus/icons-vue'
 
 const router = useRouter()
 

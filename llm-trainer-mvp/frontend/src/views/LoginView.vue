@@ -108,9 +108,14 @@ const handleLogin = () => {
         // 显示成功消息
         ElMessage.success('登录成功');
         
-        // 重定向到首页或之前的页面
-        const redirectPath = route.query.redirect || '/';
-        router.push(redirectPath);
+        // 重定向到主页或之前的页面，确保不会跳转到根路径或登录页面
+        const redirectPath = route.query.redirect || '/home';
+        // 如果重定向路径是根路径或登录页面，则跳转到主页
+        if (redirectPath === '/' || redirectPath === '/login') {
+          router.push('/home');
+        } else {
+          router.push(redirectPath);
+        }
       } catch (error) {
         console.error('登录失败:', error);
         ElMessage.error(error.message || '登录失败，请检查用户名和密码');

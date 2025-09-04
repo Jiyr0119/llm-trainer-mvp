@@ -10,6 +10,7 @@ sqlmodel==0.0.21
 pydantic==2.7.0
 pydantic-settings==2.2.1
 psycopg2-binary==2.9.9
+email-validator==2.3.0
 
 # 密码加密
 passlib[bcrypt]==1.7.4

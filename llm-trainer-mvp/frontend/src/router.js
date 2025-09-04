@@ -1,7 +1,8 @@
 // 导入Vue Router的核心函数
 import { createRouter, createWebHistory } from 'vue-router'
 // 导入各个页面组件
-import HomeView from './views/HomeView.vue' // 首页
+import LandingView from './views/LandingView.vue' // 登陆页面
+import HomeView from './views/HomeView.vue' // 首页（登录后的主页）
 import UploadView from './views/UploadView.vue' // 数据上传页面
 import DatasetsView from './views/DatasetsView.vue' // 数据集管理页面
 import TrainingView from './views/TrainingView.vue' // 模型训练页面
@@ -17,9 +18,15 @@ import AdminView from './views/AdminView.vue' // 管理员控制面板页面
 const routes = [
   {
     path: '/', // 路由路径
-    name: 'home', // 路由名称，可用于编程式导航
-    component: HomeView, // 对应的页面组件
+    name: 'landing', // 路由名称，可用于编程式导航
+    component: LandingView, // 对应的页面组件
     meta: { requiresAuth: false } // 不需要认证
+  },
+  {
+    path: '/home',
+    name: 'home',
+    component: HomeView,
+    meta: { requiresAuth: true } // 需要认证
   },
   {
     path: '/login',
@@ -119,6 +126,12 @@ router.beforeEach(async (to, from, next) => {
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth)
   // 检查路由是否需要管理员权限
   const requiresAdmin = to.matched.some(record => record.meta.requiresAdmin)
+  
+  // 如果用户已登录，但访问的是登录、注册或忘记密码页面，重定向到主页
+  if (authStore.isLoggedIn && (to.path === '/login' || to.path === '/register' || to.path === '/forgot-password' || to.path === '/')) {
+    next({ path: '/home' })
+    return
+  }
   
   // 如果需要认证，检查用户是否已登录
   if (requiresAuth && !authStore.isLoggedIn) {
