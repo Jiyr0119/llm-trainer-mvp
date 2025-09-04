@@ -3,7 +3,7 @@ import authService from '../../services/auth'
 
 // 初始状态
 const state = {
-  token: authService.getToken(), // 从本地存储获取token
+  token: authService.getAccessToken(), // 从本地存储获取token
   refreshToken: authService.getRefreshToken(), // 从本地存储获取刷新token
   user: null, // 当前用户信息
   loading: false, // 加载状态
@@ -48,8 +48,7 @@ const actions = {
     try {
       const data = await authService.login(credentials)
       // 保存token到本地存储
-      authService.saveToken(data.access_token)
-      authService.saveRefreshToken(data.refresh_token)
+      authService.saveTokens(data.access_token, data.refresh_token)
       // 更新状态
       commit('setToken', data.access_token)
       commit('setRefreshToken', data.refresh_token)
@@ -89,7 +88,7 @@ const actions = {
     try {
       const data = await authService.refreshToken(state.refreshToken)
       // 保存新token
-      authService.saveToken(data.access_token)
+      authService.saveTokens(data.access_token, state.refreshToken)
       // 更新状态
       commit('setToken', data.access_token)
       return data.access_token

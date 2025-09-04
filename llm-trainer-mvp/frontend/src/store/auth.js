@@ -6,7 +6,7 @@ import authService from '../services/auth'
 export const useAuthStore = defineStore('auth', {
   // 状态
   state: () => ({
-    token: authService.getToken(), // 从本地存储获取token
+    token: authService.getAccessToken(), // 从本地存储获取token
     refreshToken: authService.getRefreshToken(), // 从本地存储获取刷新token
     user: null, // 当前用户信息
     loading: false, // 加载状态
@@ -88,8 +88,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const data = await authService.login(credentials)
         // 保存token到本地存储
-        authService.saveToken(data.access_token)
-        authService.saveRefreshToken(data.refresh_token)
+        authService.saveTokens(data.access_token, data.refresh_token)
         // 更新状态
         this.setToken(data.access_token)
         this.setRefreshToken(data.refresh_token)
@@ -129,7 +128,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const data = await authService.refreshToken(this.refreshToken)
         // 保存新token
-        authService.saveToken(data.access_token)
+        authService.saveTokens(data.access_token, this.refreshToken)
         // 更新状态
         this.setToken(data.access_token)
         return data.access_token
