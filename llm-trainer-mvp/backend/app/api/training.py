@@ -21,7 +21,8 @@ logger = setup_logger(__name__)
 training_service = TrainingService()
 
 
-@router.post("/start", response_model=TrainingResponse)
+@router.post("/start", response_model=dict)
+@standardized_response("训练任务已提交")
 async def start_training(
     request: TrainingRequest,
     background_tasks: BackgroundTasks
@@ -36,15 +37,15 @@ async def start_training(
     - **description**: 训练描述 (可选)
     """
     job = await training_service.start_training(request)
-    # 返回符合TrainingResponse模型的对象
-    return TrainingResponse(
-        job_id=job.id,
-        status=job.status,
-        message="训练任务已提交"
-    )
+    # 返回简化的数据，装饰器会自动包装为标准格式
+    return {
+        "job_id": job.id,
+        "status": job.status
+    }
 
 
-@router.get("/status/{job_id}", response_model=TrainingStatusResponse)
+@router.get("/status/{job_id}", response_model=dict)
+@standardized_response("获取训练状态成功")
 async def get_training_status(job_id: int):
     """
     获取训练任务状态
@@ -67,14 +68,14 @@ async def stop_training(request: StopTrainingRequest):
     return result
 
 
-@router.get("/jobs", response_model=List[TrainingJobResponse])
-
+@router.get("/jobs", response_model=dict)
+@standardized_response("获取训练任务列表成功")
 async def get_training_jobs():
     """
     获取所有训练任务列表
     """
     jobs = await training_service.get_training_jobs()
-    return jobs  # 直接返回列表，而不是包装在data中
+    return jobs  # 装饰器会自动包装为标准格式
 
 
 @router.get("/logs/{job_id}")

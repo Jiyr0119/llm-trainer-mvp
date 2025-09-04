@@ -196,91 +196,80 @@ export default {
     // 加载已训练完成的模型列表
     async loadTrainedModels() {
       try {
-        const response = await trainingService.getTrainingJobs()
-        // 现在handleResponse已经统一处理了响应格式，直接使用返回的数组
-        const jobs = Array.isArray(response) ? response : []
+        // 直接使用trainingService.getTrainingJobs()，不再需要适配器
+        const jobs = await trainingService.getTrainingJobs()
+        // 过滤出训练成功的模型
         this.trainedModels = jobs.filter(job => job.status === 'completed')
       } catch (error) {
-        console.error('Failed to load trained models:', error)
-        this.$message.error('加载模型列表失败')
+        console.error('Load trained models error:', error)
+        this.$message.error('加载模型列表失败: ' + (error.message || '未知错误'))
+        this.trainedModels = []
       }
     },
-    // 执行预测操作
+    // 预测方法
     async predict() {
-      // 验证输入
-      if (!this.predictionForm.text) {
-        this.$message.warning('请输入文本')
+      // 检查输入文本是否为空
+      if (!this.predictionForm.text.trim()) {
+        this.$message.warning('请输入要预测的文本')
         return
       }
       
-      // 设置加载状态
+      // 设置预测状态为进行中
       this.predicting = true
+      this.predictionResult = null
       
       try {
-        // 调用预测API
-        const response = await predictionService.predict(
-          this.predictionForm.text,
-          this.predictionForm.modelId
-        )
+        // 调用预测服务进行文本分类预测，传递文本和模型ID
+        const result = await predictionService.predict(this.predictionForm.text, this.predictionForm.modelId)
         
-        console.log('Prediction response:', response.data)
-        // 保存预测结果
-        this.predictionResult = response.data
+        // 构造预测结果对象，包含输入文本和预测结果
+        this.predictionResult = {
+          text: this.predictionForm.text,
+          predicted_class: result.prediction,
+          confidence: result.confidence,
+          processing_time: result.processing_time
+        }
         
-        // 添加到历史记录
-        this.addToHistory(this.predictionResult)
+        // 将预测结果添加到历史记录开头
+        this.predictionHistory.unshift(this.predictionResult)
         
-        // 显示成功消息
-        this.$message.success('预测完成')
+        // 限制历史记录数量为10条
+        if (this.predictionHistory.length > 10) {
+          this.predictionHistory = this.predictionHistory.slice(0, 10)
+        }
+        
+        // 将历史记录保存到本地存储
+        localStorage.setItem('predictionHistory', JSON.stringify(this.predictionHistory))
       } catch (error) {
-        // 错误处理
+        // 处理预测失败的情况
         console.error('Prediction error:', error)
-        this.$message.error('预测失败: ' + (error.response?.data?.message || error.message))
+        this.$message.error('预测失败: ' + (error.message || '未知错误'))
       } finally {
-        // 无论成功失败，都重置加载状态
+        // 重置预测状态标志
         this.predicting = false
       }
     },
+    // 清空表单方法
     clearForm() {
       this.predictionForm.text = ''
+      this.predictionForm.modelId = null
       this.predictionResult = null
     },
-    // 添加预测结果到历史记录
-    addToHistory(result) {
-      // 添加时间戳
-      const historyItem = {
-        ...result,
-        timestamp: new Date().toISOString()
-      }
-      
-      // 添加到历史记录开头（最新的记录显示在最前面）
-      this.predictionHistory.unshift(historyItem)
-      
-      // 限制历史记录数量，最多保留10条
-      if (this.predictionHistory.length > 10) {
-        this.predictionHistory = this.predictionHistory.slice(0, 10)
-      }
-      
-      // 保存到本地存储，以便页面刷新后仍能保留历史记录
-      localStorage.setItem('predictionHistory', JSON.stringify(this.predictionHistory))
-    },
-    // 清空所有历史记录
+    // 清空历史记录方法
     clearHistory() {
       this.predictionHistory = []
-      // 同时从本地存储中移除
       localStorage.removeItem('predictionHistory')
-      // 显示成功消息
-      this.$message.success('历史记录已清空')
     },
-    // 重新使用历史记录中的文本
+    // 重新使用历史文本方法
     reuseText(text) {
       this.predictionForm.text = text
-      this.predictionResult = null
-      // 滚动到顶部
-      window.scrollTo(0, 0)
+      // 如果有预测结果，清空它
+      if (this.predictionResult) {
+        this.predictionResult = null
+      }
     }
   }
-}
+};
 </script>
 
 <style scoped>

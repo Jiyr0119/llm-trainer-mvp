@@ -12,8 +12,8 @@ logger = setup_logger(__name__)
 
 
 
-@router.post("/", response_model=PredictionResponse)
-# @standardized_response("预测成功")  # 移除装饰器，直接返回响应对象
+@router.post("/", response_model=dict)
+@standardized_response("预测成功")
 async def predict(request: PredictionRequest):
     """
     执行文本分类预测
@@ -22,4 +22,4 @@ async def predict(request: PredictionRequest):
     - **model_id**: 使用的模型ID (可选，默认使用预训练模型)
     """
     result = await prediction_service.predict(request)
-    return result  # 直接返回PredictionResponse对象
+    return result  # 装饰器会自动包装为标准格式

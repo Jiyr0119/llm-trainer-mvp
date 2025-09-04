@@ -171,6 +171,8 @@ class TestResponseConsistency:
             ("/health", "GET"),
             ("/", "GET"),
             ("/api/datasets", "GET"),
+            ("/api/train/jobs", "GET"),
+            ("/api/train/status/1", "GET"),
         ]
     
     def test_response_format_consistency(self):
@@ -277,7 +279,80 @@ class TestDecoratorFunctionality:
         assert data["success"] is False
         assert data["code"] == ErrorCode.INTERNAL_SERVER_ERROR.code
 
+    def test_training_jobs_endpoint_format(self):
+        """测试训练任务列表端点响应格式"""
+        with patch.object(TrainingService, 'get_all_training_jobs') as mock_get_jobs:
+            # Mock数据
+            mock_get_jobs.return_value = [
+                {
+                    "id": 1,
+                    "dataset_id": 1,
+                    "status": "running",
+                    "progress": 50,
+                    "model_path": "/path/to/model"
+                }
+            ]
+            
+            response = client.get("/api/train/jobs")
+            assert response.status_code == 200
+            
+            data = response.json()
+            # 验证标准响应格式
+            assert "success" in data
+            assert "code" in data
+            assert "message" in data
+            assert "data" in data
+            
+            assert data["success"] is True
+            assert data["code"] == 200
+            assert isinstance(data["data"], list)
 
-if __name__ == "__main__":
-    # 运行测试
-    pytest.main([__file__, "-v"])
+    def test_training_status_endpoint_format(self):
+        """测试训练状态端点响应格式"""
+        with patch.object(TrainingService, 'get_training_status') as mock_get_status:
+            # Mock数据
+            mock_get_status.return_value = {
+                "job_id": 1,
+                "status": "running",
+                "progress": 75,
+                "current_epoch": 3,
+                "total_epochs": 4
+            }
+            
+            response = client.get("/api/train/status/1")
+            assert response.status_code == 200
+            
+            data = response.json()
+            # 验证标准响应格式
+            assert "success" in data
+            assert "code" in data
+            assert "message" in data
+            assert "data" in data
+            
+            assert data["success"] is True
+            assert data["code"] == 200
+            assert isinstance(data["data"], dict)
+
+    def test_prediction_endpoint_format(self):
+        """测试预测端点响应格式"""
+        with patch.object(PredictionService, 'predict') as mock_predict:
+            # Mock数据
+            mock_predict.return_value = {
+                "prediction": "positive",
+                "confidence": 0.95,
+                "probabilities": {"positive": 0.95, "negative": 0.05}
+            }
+            
+            response = client.post("/api/predict", json={"text": "test text"})
+            assert response.status_code == 200
+            
+            data = response.json()
+            # 验证标准响应格式
+            assert "success" in data
+            assert "code" in data
+            assert "message" in data
+            assert "data" in data
+            
+            assert data["success"] is True
+            assert data["code"] == 200
+            assert isinstance(data["data"], dict)

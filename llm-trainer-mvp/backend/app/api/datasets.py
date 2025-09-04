@@ -35,14 +35,14 @@ async def upload_dataset(file: UploadFile = File(...)):
     return result
 
 
-@router.get("", response_model=List[DatasetResponse])
-# @standardized_response("获取数据集列表成功")  # 移除装饰器，直接返回列表
+@router.get("", response_model=dict)
+@standardized_response("获取数据集列表成功")
 async def list_datasets():
     """
     获取所有数据集列表
     """
     datasets = await dataset_service.get_all_datasets()
-    return datasets  # 直接返回列表，而不是包装在data中
+    return datasets  # 装饰器会自动包装为标准格式
 
 
 @router.get("/{dataset_id}/preview", response_model=DatasetPreviewResponse)

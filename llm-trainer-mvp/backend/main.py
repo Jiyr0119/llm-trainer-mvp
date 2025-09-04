@@ -19,6 +19,7 @@ from app.core.config import settings, get_log_level
 # 导入中间件和响应工具
 from app.core.middleware import setup_middleware
 from app.core.response import APIResponse
+from app.core.decorators import standardized_response
 from app.core.errors import APIException, ErrorCode
 from app.core.logger import setup_logger
 from app.core.exception_handler import setup_exception_handlers
@@ -75,34 +76,26 @@ setup_exception_handlers(app)
 
 # 健康检查端点
 @app.get("/", response_model=None, summary="根路径健康检查")
+@standardized_response("API服务正常运行")
 async def root():
     """根路径健康检查"""
-    return JSONResponse(
-        content=APIResponse.success(
-            data={
-                "message": "LLM Trainer MVP API",
-                "version": settings.APP_VERSION,
-                "status": "healthy",
-                "timestamp": datetime.utcnow().isoformat()
-            },
-            message="API服务正常运行"
-        )
-    )
+    return {
+        "message": "LLM Trainer MVP API",
+        "version": settings.APP_VERSION,
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 @app.get("/health", response_model=None, summary="健康检查")
+@standardized_response("服务健康")
 async def health_check():
     """健康检查端点"""
-    return JSONResponse(
-        content=APIResponse.success(
-            data={
-                "status": "healthy",
-                "version": settings.APP_VERSION,
-                "timestamp": datetime.utcnow().isoformat(),
-                "environment": settings.APP_ENV
-            },
-            message="服务健康"
-        )
-    )
+    return {
+        "status": "healthy",
+        "version": settings.APP_VERSION,
+        "timestamp": datetime.utcnow().isoformat(),
+        "environment": settings.APP_ENV
+    }
 
 # 注册API路由
 app.include_router(api_router, prefix="/api")
