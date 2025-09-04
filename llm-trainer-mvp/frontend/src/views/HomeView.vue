@@ -30,20 +30,21 @@
   </div>
 </template>
 
-<script>
-export default {
-  name: 'HomeView',
-  methods: {
-    goToUpload() {
-      this.$router.push('/upload')
-    },
-    goToTraining() {
-      this.$router.push('/train')
-    },
-    goToPrediction() {
-      this.$router.push('/predict')
-    }
-  }
+<script setup>
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
+
+function goToUpload() {
+  router.push('/upload')
+}
+
+function goToTraining() {
+  router.push('/train')
+}
+
+function goToPrediction() {
+  router.push('/predict')
 }
 </script>
 

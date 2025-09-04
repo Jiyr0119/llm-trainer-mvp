@@ -26,19 +26,20 @@ class TrainingService:
         os.makedirs(self.log_path, exist_ok=True)
         os.makedirs(self.model_path, exist_ok=True)
     
-    async def start_training(self, request: TrainingRequest) -> TrainingJob:
+    async def start_training(self, request: TrainingRequest, user_id: int = None) -> TrainingJob:
         """
         启动训练任务
         
         Args:
             request: 训练请求对象
+            user_id: 用户ID，用于验证权限
             
         Returns:
             TrainingJob: 创建的训练任务
             
         Raises:
             ValidationException: 参数验证失败
-            TrainingNotFoundException: 数据集不存在
+            TrainingNotFoundException: 数据集不存在或无权访问
             InternalServerException: 训练启动失败
         """
         try:
@@ -47,6 +48,10 @@ class TrainingService:
                 dataset = session.get(Dataset, request.dataset_id)
                 if not dataset:
                     raise DatasetNotFoundException()
+                
+                # 验证用户权限
+                if user_id is not None and dataset.user_id != user_id:
+                    raise DatasetNotFoundException("您没有权限使用此数据集")
                 
                 # 检查数据集文件是否存在
                 if not os.path.exists(dataset.file_path):
@@ -99,24 +104,32 @@ class TrainingService:
                 raise
             raise InternalServerException(f"启动训练任务失败: {str(e)}")
     
-    async def get_training_status(self, job_id: int) -> Dict[str, Any]:
+    async def get_training_status(self, job_id: int, user_id: int = None) -> Dict[str, Any]:
         """
         获取训练状态
         
         Args:
             job_id: 训练任务ID
+            user_id: 用户ID，用于验证权限
             
         Returns:
             Dict: 训练状态信息
             
         Raises:
-            TrainingNotFoundException: 训练任务不存在
+            TrainingNotFoundException: 训练任务不存在或无权访问
         """
         try:
             with get_session() as session:
                 job = session.get(TrainingJob, job_id)
                 if not job:
                     raise TrainingNotFoundException("训练任务", job_id)
+                
+                # 验证用户权限
+                if user_id is not None:
+                    # 获取关联的数据集
+                    dataset = session.get(Dataset, job.dataset_id)
+                    if dataset and dataset.user_id != user_id:
+                        raise TrainingNotFoundException("您没有权限访问此训练任务")
                 
                 # 读取最新日志
                 logs = []
@@ -150,18 +163,19 @@ class TrainingService:
                 raise
             raise InternalServerException(f"获取训练状态失败: {str(e)}")
     
-    async def stop_training(self, job_id: int) -> bool:
+    async def stop_training(self, job_id: int, user_id: int = None) -> bool:
         """
         停止训练任务
         
         Args:
             job_id: 训练任务ID
+            user_id: 用户ID，用于验证权限
             
         Returns:
             bool: 是否成功停止
             
         Raises:
-            TrainingNotFoundException: 训练任务不存在
+            TrainingNotFoundException: 训练任务不存在或无权访问
             InternalServerException: 停止失败
         """
         try:
@@ -197,19 +211,20 @@ class TrainingService:
                 raise
             raise InternalServerException(f"停止训练任务失败: {str(e)}")
     
-    async def get_training_logs(self, job_id: int, lines: int) -> List[str]:
+    async def get_training_logs(self, job_id: int, lines: int, user_id: int = None) -> List[str]:
         """
         获取训练日志
         
         Args:
             job_id: 训练任务ID
             lines: 返回的日志行数
+            user_id: 用户ID，用于验证权限
             
         Returns:
             List[str]: 日志行列表
             
         Raises:
-            TrainingNotFoundException: 训练任务不存在
+            TrainingNotFoundException: 训练任务不存在或无权访问
         """
         try:
             with get_session() as session:
@@ -241,7 +256,8 @@ class TrainingService:
         self, 
         status_filter: Optional[str] = None,
         limit: int = 50,
-        offset: int = 0
+        offset: int = 0,
+        user_id: int = None
     ) -> List[TrainingJob]:
         """
         获取训练任务列表
@@ -250,6 +266,7 @@ class TrainingService:
             status_filter: 状态过滤
             limit: 限制数量
             offset: 偏移量
+            user_id: 用户ID，用于过滤特定用户的训练任务
             
         Returns:
             List[TrainingJob]: 训练任务列表
@@ -260,6 +277,12 @@ class TrainingService:
                 
                 if status_filter:
                     statement = statement.where(TrainingJob.status == status_filter)
+                
+                # 如果提供了用户ID，则过滤该用户的训练任务
+                if user_id is not None:
+                    # 通过数据集关联过滤用户的训练任务
+                    statement = statement.join(Dataset, TrainingJob.dataset_id == Dataset.id)
+                    statement = statement.where(Dataset.user_id == user_id)
                 
                 statement = statement.offset(offset).limit(limit)
                 

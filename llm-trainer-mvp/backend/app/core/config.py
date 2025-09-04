@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     DEFAULT_EPOCHS: int = Field(default=3, env="DEFAULT_EPOCHS")
     DEFAULT_LEARNING_RATE: float = Field(default=2e-5, env="DEFAULT_LEARNING_RATE")
     
+    # 安全配置
+    SECRET_KEY: str = Field(default="your-secret-key-for-jwt-please-change-in-production", env="SECRET_KEY")
+    ALGORITHM: str = Field(default="HS256", env="ALGORITHM")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, env="ACCESS_TOKEN_EXPIRE_MINUTES")
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, env="REFRESH_TOKEN_EXPIRE_DAYS")
+    PASSWORD_BCRYPT_ROUNDS: int = Field(default=12, env="PASSWORD_BCRYPT_ROUNDS")
+    
     # 内部配置类，用于设置BaseSettings的行为
     class Config:
         env_file = ".env"  # 指定环境变量文件，从中读取配置

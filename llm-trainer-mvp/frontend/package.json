@@ -16,13 +16,14 @@
   "dependencies": {
     "axios": "^0.27.2",
     "element-plus": "^2.2.9",
+    "pinia": "^3.0.3",
     "vue": "^3.2.37",
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^3.0.1",
-    "@vue/test-utils": "^2.4.5",
     "@vitest/coverage-v8": "^1.4.0",
+    "@vue/test-utils": "^2.4.5",
     "jsdom": "^24.0.0",
     "vite": "^3.0.4",
     "vitest": "^1.4.0"

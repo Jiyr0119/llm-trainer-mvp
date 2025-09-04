@@ -104,7 +104,7 @@
           <!-- 操作列 -->
           <el-table-column label="操作">
             <template #default="scope">
-              <el-button size="small" @click="viewJobDetails(scope.row.id)">查看详情</el-button>
+              <el-button size="small" text @click="viewJobDetails(scope.row.id)">查看详情</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -130,254 +130,258 @@
   </div>
 </template>
 
-<script>
-// 导入API服务
+<script setup>
+// 导入API服务和Vue相关功能
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { datasetService, trainingService } from '../services/api'
 
-export default {
-  name: 'TrainingView', // 组件名称
-  data() {
-    return {
-      datasets: [], // 可用数据集列表
-      // 训练表单数据
-      trainingForm: {
-        dataset_id: '', // 选择的数据集ID
-        epochs: 3, // 默认训练轮数
-        learning_rate: 2e-5, // 默认学习率
-        batch_size: 16 // 默认批次大小
-      },
-      training: false, // 训练状态标志
-      statusMessage: '', // 状态消息
-      statusType: 'info', // 状态类型（用于控制提示框颜色）
-      currentJobId: null, // 当前训练任务ID
-      trainingStatus: '', // 训练状态
-      trainingProgress: 0, // 训练进度
-      trainingLogs: [], // 训练日志
-      pollingInterval: null, // 轮询间隔定时器
-      trainingJobs: [] // 训练任务列表
-    }
-  },
-  // 计算属性
-  computed: {
-    // 根据训练状态返回进度条的状态类型
-    progressStatus() {
-      if (this.trainingStatus === 'succeeded' || this.trainingStatus === 'completed') return 'success' // 成功状态
-      if (this.trainingStatus === 'failed') return 'exception' // 失败状态
-      if (this.trainingStatus === 'stopped') return 'warning' // 停止状态
-      return '' // 默认状态（进行中）
-    }
-  },
-  // 组件挂载后的生命周期钩子
-  async mounted() {
-    // 加载数据集和训练任务列表
-    await this.loadDatasets()
-    await this.loadTrainingJobs()
+// 获取路由实例
+const route = useRoute()
+
+// 响应式状态
+const datasets = ref([]) // 可用数据集列表
+// 训练表单数据
+const trainingForm = reactive({
+  dataset_id: '', // 选择的数据集ID
+  epochs: 3, // 默认训练轮数
+  learning_rate: 2e-5, // 默认学习率
+  batch_size: 16 // 默认批次大小
+})
+
+const training = ref(false) // 训练状态标志
+const statusMessage = ref('') // 状态消息
+const statusType = ref('info') // 状态类型（用于控制提示框颜色）
+const currentJobId = ref(null) // 当前训练任务ID
+const trainingStatus = ref('') // 训练状态
+const trainingProgress = ref(0) // 训练进度
+const trainingLogs = ref([]) // 训练日志
+let pollingInterval = null // 轮询间隔定时器
+const trainingJobs = ref([]) // 训练任务列表
+
+// 计算属性
+const progressStatus = computed(() => {
+  if (trainingStatus.value === 'succeeded' || trainingStatus.value === 'completed') return 'success' // 成功状态
+  if (trainingStatus.value === 'failed') return 'exception' // 失败状态
+  if (trainingStatus.value === 'stopped') return 'warning' // 停止状态
+  return '' // 默认状态（进行中）
+})
+
+// 组件挂载后的生命周期钩子
+onMounted(async () => {
+  // 加载数据集和训练任务列表
+  await loadDatasets()
+  await loadTrainingJobs()
+  
+  // 检查URL参数中是否有datasetId，如果有则自动选择该数据集
+  const datasetId = route.query.datasetId
+  if (datasetId) {
+    trainingForm.dataset_id = parseInt(datasetId, 10)
+  }
+})
+
+// 组件卸载前的生命周期钩子
+onBeforeUnmount(() => {
+  // 组件销毁前清除轮询，防止内存泄漏
+  clearPolling()
+})
+
+// 方法定义
+async function loadDatasets() {
+  try {
+    // 直接使用datasetService.getDatasets()，不再需要适配器
+    datasets.value = await datasetService.getDatasets()
+  } catch (error) {
+    console.error('Load datasets error:', error)
+    ElMessage.error('加载数据集失败: ' + (error.message || '未知错误'))
+    datasets.value = []
+  }
+}
+
+async function loadTrainingJobs() {
+  try {
+    // 直接使用trainingService.getTrainingJobs()，不再需要适配器
+    trainingJobs.value = await trainingService.getTrainingJobs()
+  } catch (error) {
+    console.error('Load training jobs error:', error)
+    ElMessage.error('加载训练任务列表失败: ' + (error.message || '未知错误'))
+    trainingJobs.value = []
+  }
+}
+// 开始训练方法
+async function startTraining() {
+  // 表单验证：检查是否选择了数据集
+  if (!trainingForm.dataset_id) {
+    ElMessage.warning('请选择一个数据集')
+    return
+  }
+  
+  // 设置训练状态为进行中
+  training.value = true
+  statusMessage.value = '正在启动训练任务...'
+  statusType.value = 'info'
+  
+  try {
+    // 调用训练服务开始训练，传递训练参数
+    const result = await trainingService.startTraining(trainingForm)
     
-    // 检查URL参数中是否有datasetId，如果有则自动选择该数据集
-    const datasetId = this.$route.query.datasetId
-    if (datasetId) {
-      this.trainingForm.dataset_id = parseInt(datasetId, 10)
+    // 保存返回的任务ID并初始化状态
+    currentJobId.value = result.job_id
+    trainingStatus.value = 'pending'
+    trainingProgress.value = 0
+    trainingLogs.value = []
+    
+    // 更新状态消息
+    statusMessage.value = '训练任务已启动'
+    statusType.value = 'success'
+    
+    // 启动轮询获取训练状态
+    startPolling()
+    
+    // 重新加载训练任务列表以显示新任务
+    await loadTrainingJobs()
+  } catch (error) {
+    // 处理训练启动失败的情况
+    console.error('Start training error:', error)
+    statusMessage.value = '训练任务启动失败: ' + (error.message || '未知错误')
+    statusType.value = 'error'
+    ElMessage.error(statusMessage.value)
+  } finally {
+    // 重置训练状态标志
+    training.value = false
+  }
+}
+// 停止训练方法
+async function stopTraining() {
+  // 检查是否有当前任务ID
+  if (!currentJobId.value) {
+    ElMessage.warning('没有正在运行的训练任务')
+    return
+  }
+  
+  try {
+    // 调用训练服务停止训练，传递任务ID
+    await trainingService.stopTraining(currentJobId.value)
+    
+    // 更新状态消息
+    statusMessage.value = '已发送停止训练请求'
+    statusType.value = 'info'
+    ElMessage.success('停止训练请求已发送')
+    
+    // 停止轮询
+    clearPolling()
+  } catch (error) {
+    // 处理停止训练失败的情况
+    console.error('Stop training error:', error)
+    ElMessage.error('停止训练失败: ' + (error.message || '未知错误'))
+  }
+}
+// 获取训练状态方法
+async function getTrainingStatus() {
+  // 检查是否有当前任务ID
+  if (!currentJobId.value) return
+  
+  try {
+    // 调用训练服务获取训练状态，传递任务ID
+    const status = await trainingService.getTrainingStatus(currentJobId.value)
+    
+    // 更新组件状态数据
+    trainingStatus.value = status.status
+    trainingProgress.value = status.progress || 0
+    
+    // 根据训练状态更新状态消息和类型
+    switch (status.status) {
+      case 'pending':
+        statusMessage.value = '训练任务正在等待中...'
+        statusType.value = 'info'
+        break
+      case 'running':
+        statusMessage.value = '训练进行中...'
+        statusType.value = 'info'
+        break
+      case 'succeeded':
+      case 'completed':  // 添加对completed状态的支持
+        statusMessage.value = '训练已完成'
+        statusType.value = 'success'
+        // 训练完成后停止轮询
+        clearPolling()
+        // 重新加载训练任务列表以更新状态
+        setTimeout(() => {
+          loadTrainingJobs()
+        }, 1000) // 延迟1秒再加载，避免过于频繁的请求
+        break
+      case 'failed':
+        statusMessage.value = '训练失败: ' + (status.error || '未知错误')
+        statusType.value = 'error'
+        // 训练失败后停止轮询
+        clearPolling()
+        // 延迟加载训练任务列表
+        setTimeout(() => {
+          loadTrainingJobs()
+        }, 1000) // 延迟1秒再加载
+        break
+      case 'stopped':
+        statusMessage.value = '训练已停止'
+        statusType.value = 'warning'
+        // 训练停止后停止轮询
+        clearPolling()
+        // 延迟加载训练任务列表
+        setTimeout(() => {
+          loadTrainingJobs()
+        }, 1000) // 延迟1秒再加载
+        break
     }
-  },
-  // 组件卸载前的生命周期钩子
-  beforeUnmount() {
-    // 组件销毁前清除轮询，防止内存泄漏
-    this.clearPolling()
-  },
-  methods: {
-    async loadDatasets() {
-      try {
-        // 直接使用datasetService.getDatasets()，不再需要适配器
-        this.datasets = await datasetService.getDatasets()
-      } catch (error) {
-        console.error('Load datasets error:', error)
-        this.$message.error('加载数据集失败: ' + (error.message || '未知错误'))
-        this.datasets = []
-      }
-    },
-    async loadTrainingJobs() {
-      try {
-        // 直接使用trainingService.getTrainingJobs()，不再需要适配器
-        this.trainingJobs = await trainingService.getTrainingJobs()
-      } catch (error) {
-        console.error('Load training jobs error:', error)
-        this.$message.error('加载训练任务列表失败: ' + (error.message || '未知错误'))
-        this.trainingJobs = []
-      }
-    },
-    // 开始训练方法
-    async startTraining() {
-      // 表单验证：检查是否选择了数据集
-      if (!this.trainingForm.dataset_id) {
-        this.$message.warning('请选择一个数据集')
-        return
-      }
-      
-      // 设置训练状态为进行中
-      this.training = true
-      this.statusMessage = '正在启动训练任务...'
-      this.statusType = 'info'
-      
-      try {
-        // 调用训练服务开始训练，传递训练参数
-        const result = await trainingService.startTraining(this.trainingForm)
-        
-        // 保存返回的任务ID并初始化状态
-        this.currentJobId = result.job_id
-        this.trainingStatus = 'pending'
-        this.trainingProgress = 0
-        this.trainingLogs = []
-        
-        // 更新状态消息
-        this.statusMessage = '训练任务已启动'
-        this.statusType = 'success'
-        
-        // 启动轮询获取训练状态
-        this.startPolling()
-        
-        // 重新加载训练任务列表以显示新任务
-        await this.loadTrainingJobs()
-      } catch (error) {
-        // 处理训练启动失败的情况
-        console.error('Start training error:', error)
-        this.statusMessage = '训练任务启动失败: ' + (error.message || '未知错误')
-        this.statusType = 'error'
-        this.$message.error(this.statusMessage)
-      } finally {
-        // 重置训练状态标志
-        this.training = false
-      }
-    },
-    // 停止训练方法
-    async stopTraining() {
-      // 检查是否有当前任务ID
-      if (!this.currentJobId) {
-        this.$message.warning('没有正在运行的训练任务')
-        return
-      }
-      
-      try {
-        // 调用训练服务停止训练，传递任务ID
-        await trainingService.stopTraining(this.currentJobId)
-        
-        // 更新状态消息
-        this.statusMessage = '已发送停止训练请求'
-        this.statusType = 'info'
-        this.$message.success('停止训练请求已发送')
-        
-        // 停止轮询
-        this.clearPolling()
-      } catch (error) {
-        // 处理停止训练失败的情况
-        console.error('Stop training error:', error)
-        this.$message.error('停止训练失败: ' + (error.message || '未知错误'))
-      }
-    },
-    // 获取训练状态方法
-    async getTrainingStatus() {
-      // 检查是否有当前任务ID
-      if (!this.currentJobId) return
-      
-      try {
-        // 调用训练服务获取训练状态，传递任务ID
-        const status = await trainingService.getTrainingStatus(this.currentJobId)
-        
-        // 更新组件状态数据
-        this.trainingStatus = status.status
-        this.trainingProgress = status.progress || 0
-        
-        // 根据训练状态更新状态消息和类型
-        switch (status.status) {
-          case 'pending':
-            this.statusMessage = '训练任务正在等待中...'
-            this.statusType = 'info'
-            break
-          case 'running':
-            this.statusMessage = '训练进行中...'
-            this.statusType = 'info'
-            break
-          case 'succeeded':
-          case 'completed':  // 添加对completed状态的支持
-            this.statusMessage = '训练已完成'
-            this.statusType = 'success'
-            // 训练完成后停止轮询
-            this.clearPolling()
-            // 重新加载训练任务列表以更新状态
-            setTimeout(() => {
-              this.loadTrainingJobs()
-            }, 1000) // 延迟1秒再加载，避免过于频繁的请求
-            break
-          case 'failed':
-            this.statusMessage = '训练失败: ' + (status.error || '未知错误')
-            this.statusType = 'error'
-            // 训练失败后停止轮询
-            this.clearPolling()
-            // 延迟加载训练任务列表
-            setTimeout(() => {
-              this.loadTrainingJobs()
-            }, 1000) // 延迟1秒再加载
-            break
-          case 'stopped':
-            this.statusMessage = '训练已停止'
-            this.statusType = 'warning'
-            // 训练停止后停止轮询
-            this.clearPolling()
-            // 延迟加载训练任务列表
-            setTimeout(() => {
-              this.loadTrainingJobs()
-            }, 1000) // 延迟1秒再加载
-            break
-        }
-      } catch (error) {
-        // 处理获取训练状态失败的情况
-        console.error('Get training status error:', error)
-        this.statusMessage = '获取训练状态失败: ' + (error.message || '未知错误')
-        this.statusType = 'error'
-      }
-    },
-    // 获取训练日志方法
-    async getTrainingLogs() {
-      // 检查是否有当前任务ID
-      if (!this.currentJobId) return
-      
-      try {
-        // 调用训练服务获取训练日志，传递任务ID和行数参数
-        const logs = await trainingService.getTrainingLogs(this.currentJobId, 50)
-        // 更新组件日志数据
-        this.trainingLogs = logs || []
-      } catch (error) {
-        // 处理获取训练日志失败的情况
-        console.error('Get training logs error:', error)
-        this.$message.error('获取训练日志失败: ' + (error.message || '未知错误'))
-      }
-    },
-    // 启动轮询方法
-    startPolling() {
-      // 先清除现有的轮询定时器（如果有）
-      this.clearPolling()
-      
-      // 设置新的轮询定时器，每2秒获取一次训练状态和日志
-      this.pollingInterval = setInterval(async () => {
-        await this.getTrainingStatus()
-        await this.getTrainingLogs()
-      }, 2000)
-    },
-    // 清除轮询方法
-    clearPolling() {
-      // 检查并清除轮询定时器
-      if (this.pollingInterval) {
-        clearInterval(this.pollingInterval)
-        this.pollingInterval = null
-      }
-    },
-    // 查看任务详情方法
-    async viewJobDetails(jobId) {
-      try {
-        // 获取指定任务的详细状态
-        const status = await trainingService.getTrainingStatus(jobId)
-        
-        // 构造详细信息消息
-        const details = `
+  } catch (error) {
+    // 处理获取训练状态失败的情况
+    console.error('Get training status error:', error)
+    statusMessage.value = '获取训练状态失败: ' + (error.message || '未知错误')
+    statusType.value = 'error'
+  }
+}
+// 获取训练日志方法
+async function getTrainingLogs() {
+  // 检查是否有当前任务ID
+  if (!currentJobId.value) return
+  
+  try {
+    // 调用训练服务获取训练日志，传递任务ID和行数参数
+    const logs = await trainingService.getTrainingLogs(currentJobId.value, 50)
+    // 更新组件日志数据
+    trainingLogs.value = logs || []
+  } catch (error) {
+    // 处理获取训练日志失败的情况
+    console.error('Get training logs error:', error)
+    ElMessage.error('获取训练日志失败: ' + (error.message || '未知错误'))
+  }
+}
+// 启动轮询方法
+function startPolling() {
+  // 先清除现有的轮询定时器（如果有）
+  clearPolling()
+  
+  // 设置新的轮询定时器，每2秒获取一次训练状态和日志
+  pollingInterval = setInterval(async () => {
+    await getTrainingStatus()
+    await getTrainingLogs()
+  }, 2000)
+}
+// 清除轮询方法
+function clearPolling() {
+  // 检查并清除轮询定时器
+  if (pollingInterval) {
+    clearInterval(pollingInterval)
+    pollingInterval = null
+  }
+}
+// 查看任务详情方法
+async function viewJobDetails(jobId) {
+  try {
+    // 获取指定任务的详细状态
+    const status = await trainingService.getTrainingStatus(jobId)
+    
+    // 构造详细信息消息
+    const details = `
 任务ID: ${status.job_id}
 状态: ${status.status}
 进度: ${status.progress || 0}%
@@ -386,44 +390,42 @@ export default {
 准确率: ${status.accuracy !== null ? (status.accuracy * 100).toFixed(2) + '%' : 'N/A'}
 创建时间: ${status.created_at || 'N/A'}
 更新时间: ${status.updated_at || 'N/A'}
-        `.trim()
-        
-        // 显示详细信息对话框
-        this.$alert(details, '任务详情', {
-          confirmButtonText: '确定',
-          customClass: 'job-details-dialog'
-        })
-      } catch (error) {
-        // 处理获取任务详情失败的情况
-        console.error('View job details error:', error)
-        this.$message.error('获取任务详情失败: ' + (error.message || '未知错误'))
-      }
-    },
-    // 根据任务状态返回对应标签类型的方法
-    getStatusType(status) {
-      const statusTypes = {
-        pending: 'info',
-        running: 'primary',
-        succeeded: 'success',
-        completed: 'success',  // 添加对completed状态的支持
-        failed: 'danger',
-        stopped: 'warning'
-      }
-      return statusTypes[status] || 'info'
-    },
+    `.trim()
     
-    // 根据任务状态返回对应进度条状态的方法
-    getProgressStatus(status) {
-      const progressStatuses = {
-        succeeded: 'success',
-        completed: 'success',  // 添加对completed状态的支持
-        failed: 'exception',
-        stopped: 'warning'
-      }
-      return progressStatuses[status] || ''
-    }
+    // 显示详细信息对话框
+    ElMessageBox.alert(details, '任务详情', {
+      confirmButtonText: '确定',
+      customClass: 'job-details-dialog'
+    })
+  } catch (error) {
+    // 处理获取任务详情失败的情况
+    console.error('View job details error:', error)
+    ElMessage.error('获取任务详情失败: ' + (error.message || '未知错误'))
   }
-};
+}
+// 根据任务状态返回对应标签类型的方法
+function getStatusType(status) {
+  const statusTypes = {
+    pending: 'info',
+    running: 'primary',
+    succeeded: 'success',
+    completed: 'success',  // 添加对completed状态的支持
+    failed: 'danger',
+    stopped: 'warning'
+  }
+  return statusTypes[status] || 'info'
+}
+
+// 根据任务状态返回对应进度条状态的方法
+function getProgressStatus(status) {
+  const progressStatuses = {
+    succeeded: 'success',
+    completed: 'success',  // 添加对completed状态的支持
+    failed: 'exception',
+    stopped: 'warning'
+  }
+  return progressStatuses[status] || ''
+}
 </script>
 
 <style scoped>

@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <span>数据集管理</span>
-          <el-button type="primary" size="small" @click="$router.push('/upload')">
+          <el-button type="primary" size="small" @click="router.push('/upload')">
             上传新数据集
           </el-button>
         </div>
@@ -17,7 +17,7 @@
 
         <div v-else-if="datasets.length === 0" class="empty-data">
           <el-empty description="暂无数据集" />
-          <el-button type="primary" @click="$router.push('/upload')">
+          <el-button type="primary" @click="router.push('/upload')">
             上传数据集
           </el-button>
         </div>
@@ -63,66 +63,74 @@
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
 import { datasetService } from '../services/api';
 
-export default {
-  name: 'DatasetsView',
-  data() {
-    return {
-      datasets: [],
-      loading: true,
-      previewDialogVisible: false,
-      previewLoading: false,
-      previewData: [],
-      currentDatasetId: null
-    };
-  },
-  created() {
-    this.fetchDatasets();
-  },
-  methods: {
-    async fetchDatasets() {
-      this.loading = true;
-      try {
-        // 直接使用datasetService.getDatasets()，不再需要适配器
-        this.datasets = await datasetService.getDatasets();
-      } catch (error) {
-        console.error('Failed to fetch datasets:', error);
-        this.$message.error('获取数据集列表失败: ' + (error.message || '未知错误'));
-      } finally {
-        this.loading = false;
-      }
-    },
-    async previewDataset(datasetId) {
-      this.currentDatasetId = datasetId;
-      this.previewDialogVisible = true;
-      this.previewLoading = true;
-      this.previewData = [];
+const router = useRouter();
 
-      try {
-        // 直接使用datasetService.getDatasetPreview()，不再需要适配器
-        this.previewData = await datasetService.getDatasetPreview(datasetId);
-      } catch (error) {
-        console.error('Failed to preview dataset:', error);
-        this.$message.error('获取数据集预览失败: ' + (error.message || '未知错误'));
-      } finally {
-        this.previewLoading = false;
-      }
-    },
-    goToTraining(datasetId) {
-      this.$router.push({
-        path: '/train',
-        query: { datasetId }
-      });
-    },
-    formatDate(dateString) {
-      if (!dateString) return '';
-      const date = new Date(dateString);
-      return date.toLocaleString();
-    }
+// 响应式状态
+const datasets = ref([]);
+const loading = ref(true);
+const previewDialogVisible = ref(false);
+const previewLoading = ref(false);
+const previewData = ref([]);
+const currentDatasetId = ref(null);
+
+// 获取数据集列表
+const fetchDatasets = async () => {
+  loading.value = true;
+  try {
+    // 直接使用datasetService.getDatasets()，不再需要适配器
+    datasets.value = await datasetService.getDatasets();
+  } catch (error) {
+    console.error('Failed to fetch datasets:', error);
+    ElMessage.error('获取数据集列表失败: ' + (error.message || '未知错误'));
+  } finally {
+    loading.value = false;
   }
 };
+
+// 预览数据集
+const previewDataset = async (datasetId) => {
+  currentDatasetId.value = datasetId;
+  previewDialogVisible.value = true;
+  previewLoading.value = true;
+  previewData.value = [];
+
+  try {
+    // 直接使用datasetService.getDatasetPreview()，不再需要适配器
+    previewData.value = await datasetService.getDatasetPreview(datasetId);
+  } catch (error) {
+    console.error('Failed to preview dataset:', error);
+    ElMessage.error('获取数据集预览失败: ' + (error.message || '未知错误'));
+  } finally {
+    previewLoading.value = false;
+  }
+};
+
+// 跳转到训练页面
+const goToTraining = (datasetId) => {
+  router.push({
+    path: '/train',
+    query: { datasetId }
+  });
+};
+
+// 格式化日期
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleString();
+};
+
+// 组件挂载时获取数据集列表
+onMounted(() => {
+  fetchDatasets();
+});
+
 </script>
 
 <style scoped>

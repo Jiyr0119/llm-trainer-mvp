@@ -79,56 +79,53 @@ text,label
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { UploadFilled } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { datasetService } from '../services/api'
 
-export default {
-  name: 'UploadView',
-  components: {
-    UploadFilled
-  },
-  data() {
-    return {
-      selectedFile: null,
-      uploading: false,
-      uploadSuccess: false
-    }
-  },
-  methods: {
-    handleFileChange(file) {
-      this.selectedFile = file.raw
-    },
-    handleFileRemove() {
-      this.selectedFile = null
-      this.uploadSuccess = false
-    },
-    async uploadDataset() {
-      if (!this.selectedFile) {
-        this.$message.warning('请先选择文件')
-        return
-      }
-      
-      this.uploading = true
-      try {
-        const response = await datasetService.uploadDataset(this.selectedFile)
-        console.log('Upload response:', response.data)
-        this.uploadSuccess = true
-        this.$message.success('数据集上传成功')
-      } catch (error) {
-        console.error('Upload error:', error)
-        this.$message.error('上传失败: ' + (error.message || '未知错误'))
-      } finally {
-        this.uploading = false
-      }
-    },
-    goToTraining() {
-      this.$router.push('/train')
-    },
-    goToDatasets() {
-      this.$router.push('/datasets')
-    }
+const router = useRouter()
+const selectedFile = ref(null)
+const uploading = ref(false)
+const uploadSuccess = ref(false)
+
+const handleFileChange = (file) => {
+  selectedFile.value = file.raw
+}
+
+const handleFileRemove = () => {
+  selectedFile.value = null
+  uploadSuccess.value = false
+}
+
+const uploadDataset = async () => {
+  if (!selectedFile.value) {
+    ElMessage.warning('请先选择文件')
+    return
   }
+  
+  uploading.value = true
+  try {
+    const response = await datasetService.uploadDataset(selectedFile.value)
+    console.log('Upload response:', response.data)
+    uploadSuccess.value = true
+    ElMessage.success('数据集上传成功')
+  } catch (error) {
+    console.error('Upload error:', error)
+    ElMessage.error('上传失败: ' + (error.message || '未知错误'))
+  } finally {
+    uploading.value = false
+  }
+}
+
+const goToTraining = () => {
+  router.push('/train')
+}
+
+const goToDatasets = () => {
+  router.push('/datasets')
 }
 </script>
 

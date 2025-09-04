@@ -8,6 +8,8 @@ import 'element-plus/dist/index.css'
 import App from './App.vue'
 // 导入路由配置
 import router from './router'
+// 导入Pinia状态管理
+import pinia from './store'
 
 // 创建Vue应用实例
 const app = createApp(App)
@@ -15,5 +17,7 @@ const app = createApp(App)
 app.use(ElementPlus)
 // 注册路由插件，启用路由功能
 app.use(router)
+// 注册Pinia状态管理
+app.use(pinia)
 // 将应用挂载到DOM元素#app上，开始应用的生命周期
 app.mount('#app')

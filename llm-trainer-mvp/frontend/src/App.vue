@@ -10,19 +10,13 @@
   </div>
 </template>
 
-<script>
+<script setup>
 // 导入导航组件
 import Navigation from './components/Navigation.vue'
 // 导入错误处理组件
 import ErrorHandler from './components/ErrorHandler.vue'
 
-export default {
-  name: 'App', // 组件名称
-  components: {
-    Navigation, // 注册导航组件，使其可在模板中使用
-    ErrorHandler // 注册错误处理组件
-  }
-}
+// 使用setup语法，不再需要显式注册组件和返回选项对象
 </script>
 
 <style>

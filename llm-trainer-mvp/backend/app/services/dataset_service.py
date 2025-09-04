@@ -24,7 +24,7 @@ class DatasetService:
         self.upload_path = settings.UPLOAD_PATH
         os.makedirs(self.upload_path, exist_ok=True)
     
-    async def upload_dataset(self, file: UploadFile) -> Dict[str, Any]:
+    async def upload_dataset(self, file: UploadFile, user_id: int) -> Dict[str, Any]:
         """
         上传数据集文件
         
@@ -86,7 +86,8 @@ class DatasetService:
                         name=file.filename,
                         file_path=file_path,
                         created_at=datetime.utcnow(),
-                        total_rows=total_rows
+                        total_rows=total_rows,
+                        user_id=user_id
                     )
                     session.add(dataset)
                     session.commit()
@@ -115,16 +116,22 @@ class DatasetService:
                 raise
             raise InternalServerException(f"数据集上传失败: {str(e)}")
     
-    async def get_all_datasets(self) -> List[Dict[str, Any]]:
+    async def get_all_datasets(self, user_id: int = None) -> List[Dict[str, Any]]:
         """
-        获取所有数据集列表
+        获取数据集列表，可按用户ID过滤
         
+        Args:
+            user_id: 用户ID，如果提供则只返回该用户的数据集
+            
         Returns:
             List[Dict]: 数据集列表
         """
         try:
             with get_session() as session:
-                statement = select(Dataset).order_by(Dataset.id.desc())
+                if user_id is not None:
+                    statement = select(Dataset).where(Dataset.user_id == user_id).order_by(Dataset.id.desc())
+                else:
+                    statement = select(Dataset).order_by(Dataset.id.desc())
                 results = session.exec(statement).all()
                 
                 datasets = []
@@ -144,26 +151,31 @@ class DatasetService:
             logger.error(f"获取数据集列表失败: {str(e)}")
             raise InternalServerException(f"获取数据集列表失败: {str(e)}")
     
-    async def preview_dataset(self, dataset_id: int, limit: int = 10) -> Dict[str, Any]:
+    async def preview_dataset(self, dataset_id: int, limit: int = 10, user_id: int = None) -> Dict[str, Any]:
         """
         预览数据集内容
         
         Args:
             dataset_id: 数据集ID
             limit: 预览行数
+            user_id: 用户ID，用于验证权限
             
         Returns:
             Dict: 包含预览数据的字典
             
         Raises:
-            DatasetNotFoundException: 数据集不存在
+            DatasetNotFoundException: 数据集不存在或无权访问
             InternalServerException: 数据集处理失败
         """
         try:
-            with get_session() as session:
+            async with self.db.session() as session:
                 dataset = session.get(Dataset, dataset_id)
                 if not dataset:
                     raise DatasetNotFoundException()
+                
+                # 验证用户权限
+                if user_id is not None and dataset.user_id != user_id:
+                    raise DatasetNotFoundException("您没有权限删除此数据集")
                 
                 # 检查文件是否存在
                 if not os.path.exists(dataset.file_path):
@@ -198,18 +210,19 @@ class DatasetService:
                 raise
             raise InternalServerException(f"数据集预览失败: {str(e)}")
     
-    async def delete_dataset(self, dataset_id: int) -> bool:
+    async def delete_dataset(self, dataset_id: int, user_id: int = None) -> bool:
         """
         删除数据集
         
         Args:
             dataset_id: 数据集ID
+            user_id: 用户ID，用于验证权限
             
         Returns:
             bool: 删除是否成功
             
         Raises:
-            DatasetNotFoundException: 数据集不存在
+            DatasetNotFoundException: 数据集不存在或无权访问
             InternalServerException: 删除失败
         """
         try:

@@ -93,7 +93,7 @@
         <!-- 卡片标题和操作区 -->
         <div class="card-header">
           <span>预测历史</span>
-          <el-button type="text" @click="clearHistory">清空历史</el-button>
+          <el-button text @click="clearHistory">清空历史</el-button>
         </div>
       </template>
       <!-- 历史记录表格 -->
@@ -120,7 +120,7 @@
         <!-- 操作列：提供重用文本功能 -->
         <el-table-column label="操作" width="100">
           <template #default="scope">
-            <el-button type="text" @click="reuseText(scope.row.text)">重新使用</el-button>
+            <el-button text @click="reuseText(scope.row.text)">重新使用</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -157,119 +157,121 @@
   </div>
 </template>
 
-<script>
+<script setup>
+// 导入Vue Composition API
+import { ref, reactive, onMounted } from 'vue';
+// 导入Element Plus消息组件
+import { ElMessage } from 'element-plus';
 // 导入API服务
-import { predictionService, trainingService } from '../services/api'
+import { predictionService, trainingService } from '../services/api';
 
-export default {
-  name: 'PredictionView', // 组件名称
-  data() {
-    return {
-      // 预测表单数据
-      predictionForm: {
-        text: '', // 输入文本
-        modelId: null // 选择的模型ID，null表示使用默认模型
-      },
-      predicting: false, // 预测状态标志，控制加载状态
-      predictionResult: null, // 预测结果对象
-      predictionHistory: [], // 预测历史记录数组
-      trainedModels: [] // 已训练模型列表
-    }
-  },
-  // 组件创建时的生命周期钩子
-  created() {
-    // 从本地存储加载历史记录
-    const savedHistory = localStorage.getItem('predictionHistory')
-    if (savedHistory) {
-      try {
-        this.predictionHistory = JSON.parse(savedHistory)
-      } catch (e) {
-        console.error('Failed to parse prediction history:', e)
-      }
+// 预测表单数据
+const predictionForm = reactive({
+  text: '', // 输入文本
+  modelId: null // 选择的模型ID，null表示使用默认模型
+});
+
+const predicting = ref(false); // 预测状态标志，控制加载状态
+const predictionResult = ref(null); // 预测结果对象
+const predictionHistory = ref([]); // 预测历史记录数组
+const trainedModels = ref([]); // 已训练模型列表
+
+// 加载已训练完成的模型列表
+async function loadTrainedModels() {
+  try {
+    // 直接使用trainingService.getTrainingJobs()
+    const jobs = await trainingService.getTrainingJobs();
+    // 过滤出训练成功的模型
+    trainedModels.value = jobs.filter(job => job.status === 'completed');
+  } catch (error) {
+    console.error('Load trained models error:', error);
+    ElMessage.error('加载模型列表失败: ' + (error.message || '未知错误'));
+    trainedModels.value = [];
+  }
+}
+
+// 预测方法
+async function predict() {
+  // 检查输入文本是否为空
+  if (!predictionForm.text.trim()) {
+    ElMessage.warning('请输入要预测的文本');
+    return;
+  }
+  
+  // 设置预测状态为进行中
+  predicting.value = true;
+  predictionResult.value = null;
+  
+  try {
+    // 调用预测服务进行文本分类预测，传递文本和模型ID
+    const result = await predictionService.predict(predictionForm.text, predictionForm.modelId);
+    
+    // 构造预测结果对象，包含输入文本和预测结果
+    predictionResult.value = {
+      text: predictionForm.text,
+      predicted_class: result.prediction,
+      confidence: result.confidence,
+      processing_time: result.processing_time
+    };
+    
+    // 将预测结果添加到历史记录开头
+    predictionHistory.value.unshift(predictionResult.value);
+    
+    // 限制历史记录数量为10条
+    if (predictionHistory.value.length > 10) {
+      predictionHistory.value = predictionHistory.value.slice(0, 10);
     }
     
-    // 加载训练好的模型列表
-    this.loadTrainedModels()
-  },
-  // 组件方法
-  methods: {
-    // 加载已训练完成的模型列表
-    async loadTrainedModels() {
-      try {
-        // 直接使用trainingService.getTrainingJobs()，不再需要适配器
-        const jobs = await trainingService.getTrainingJobs()
-        // 过滤出训练成功的模型
-        this.trainedModels = jobs.filter(job => job.status === 'completed')
-      } catch (error) {
-        console.error('Load trained models error:', error)
-        this.$message.error('加载模型列表失败: ' + (error.message || '未知错误'))
-        this.trainedModels = []
-      }
-    },
-    // 预测方法
-    async predict() {
-      // 检查输入文本是否为空
-      if (!this.predictionForm.text.trim()) {
-        this.$message.warning('请输入要预测的文本')
-        return
-      }
-      
-      // 设置预测状态为进行中
-      this.predicting = true
-      this.predictionResult = null
-      
-      try {
-        // 调用预测服务进行文本分类预测，传递文本和模型ID
-        const result = await predictionService.predict(this.predictionForm.text, this.predictionForm.modelId)
-        
-        // 构造预测结果对象，包含输入文本和预测结果
-        this.predictionResult = {
-          text: this.predictionForm.text,
-          predicted_class: result.prediction,
-          confidence: result.confidence,
-          processing_time: result.processing_time
-        }
-        
-        // 将预测结果添加到历史记录开头
-        this.predictionHistory.unshift(this.predictionResult)
-        
-        // 限制历史记录数量为10条
-        if (this.predictionHistory.length > 10) {
-          this.predictionHistory = this.predictionHistory.slice(0, 10)
-        }
-        
-        // 将历史记录保存到本地存储
-        localStorage.setItem('predictionHistory', JSON.stringify(this.predictionHistory))
-      } catch (error) {
-        // 处理预测失败的情况
-        console.error('Prediction error:', error)
-        this.$message.error('预测失败: ' + (error.message || '未知错误'))
-      } finally {
-        // 重置预测状态标志
-        this.predicting = false
-      }
-    },
-    // 清空表单方法
-    clearForm() {
-      this.predictionForm.text = ''
-      this.predictionForm.modelId = null
-      this.predictionResult = null
-    },
-    // 清空历史记录方法
-    clearHistory() {
-      this.predictionHistory = []
-      localStorage.removeItem('predictionHistory')
-    },
-    // 重新使用历史文本方法
-    reuseText(text) {
-      this.predictionForm.text = text
-      // 如果有预测结果，清空它
-      if (this.predictionResult) {
-        this.predictionResult = null
-      }
+    // 将历史记录保存到本地存储
+    localStorage.setItem('predictionHistory', JSON.stringify(predictionHistory.value));
+  } catch (error) {
+    // 处理预测失败的情况
+    console.error('Prediction error:', error);
+    ElMessage.error('预测失败: ' + (error.message || '未知错误'));
+  } finally {
+    // 重置预测状态标志
+    predicting.value = false;
+  }
+}
+
+// 清空表单方法
+function clearForm() {
+  predictionForm.text = '';
+  predictionForm.modelId = null;
+  predictionResult.value = null;
+}
+
+// 清空历史记录方法
+function clearHistory() {
+  predictionHistory.value = [];
+  localStorage.removeItem('predictionHistory');
+}
+
+// 重新使用历史文本方法
+function reuseText(text) {
+  predictionForm.text = text;
+  // 如果有预测结果，清空它
+  if (predictionResult.value) {
+    predictionResult.value = null;
+  }
+}
+
+// 组件挂载时的生命周期钩子
+onMounted(() => {
+  // 从本地存储加载历史记录
+  const savedHistory = localStorage.getItem('predictionHistory');
+  if (savedHistory) {
+    try {
+      predictionHistory.value = JSON.parse(savedHistory);
+    } catch (e) {
+      console.error('Failed to parse prediction history:', e);
     }
   }
-};
+  
+  // 加载训练好的模型列表
+  loadTrainedModels();
+});
+
 </script>
 
 <style scoped>

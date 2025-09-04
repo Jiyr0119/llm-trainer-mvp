@@ -1,7 +1,10 @@
 # 训练相关API路由
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
 from typing import List
 from datetime import datetime
+
+from ..api.auth import get_current_active_user
+from ..schemas import User
 
 from ..core.response import APIResponse
 from ..core.errors import TrainingNotFoundException, DatasetNotFoundException
@@ -25,7 +28,8 @@ training_service = TrainingService()
 @standardized_response("训练任务已提交")
 async def start_training(
     request: TrainingRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     开始模型训练
@@ -36,7 +40,7 @@ async def start_training(
     - **batch_size**: 批次大小 (1-128)
     - **description**: 训练描述 (可选)
     """
-    job = await training_service.start_training(request)
+    job = await training_service.start_training(request, user_id=current_user.id)
     # 返回简化的数据，装饰器会自动包装为标准格式
     return {
         "job_id": job.id,
@@ -46,35 +50,35 @@ async def start_training(
 
 @router.get("/status/{job_id}", response_model=dict)
 @standardized_response("获取训练状态成功")
-async def get_training_status(job_id: int):
+async def get_training_status(job_id: int, current_user: User = Depends(get_current_active_user)):
     """
     获取训练任务状态
     
     - **job_id**: 训练任务ID
     """
-    status_data = await training_service.get_training_status(job_id)
+    status_data = await training_service.get_training_status(job_id, user_id=current_user.id)
     return status_data
 
 
 @router.post("/stop")
 @standardized_response("训练任务已停止")
-async def stop_training(request: StopTrainingRequest):
+async def stop_training(request: StopTrainingRequest, current_user: User = Depends(get_current_active_user)):
     """
     停止训练任务
     
     - **job_id**: 训练任务ID
     """
-    result = await training_service.stop_training(request.job_id)
+    result = await training_service.stop_training(request.job_id, user_id=current_user.id)
     return result
 
 
 @router.get("/jobs", response_model=dict)
 @standardized_response("获取训练任务列表成功")
-async def get_training_jobs():
+async def get_training_jobs(current_user: User = Depends(get_current_active_user)):
     """
-    获取所有训练任务列表
+    获取当前用户的训练任务列表
     """
-    jobs = await training_service.get_training_jobs()
+    jobs = await training_service.get_training_jobs(user_id=current_user.id)
     return jobs  # 装饰器会自动包装为标准格式
 
 
@@ -82,7 +86,8 @@ async def get_training_jobs():
 @standardized_response("获取训练日志成功")
 async def get_training_logs(
     job_id: int,
-    lines: int = Query(default=50, ge=1, le=1000, description="日志行数")
+    lines: int = Query(default=50, ge=1, le=1000, description="日志行数"),
+    current_user: User = Depends(get_current_active_user)
 ):
     """
     获取训练日志
@@ -90,5 +95,5 @@ async def get_training_logs(
     - **job_id**: 训练任务ID
     - **lines**: 日志行数，范围1-1000
     """
-    logs = await training_service.get_training_logs(job_id, lines)
+    logs = await training_service.get_training_logs(job_id, lines, user_id=current_user.id)
     return {"logs": logs}
