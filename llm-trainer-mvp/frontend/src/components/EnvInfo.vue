@@ -1,10 +1,10 @@
 <template>
   <div class="env-info" v-if="showEnvInfo">
-    <el-tag :type="envTagType" size="small">
+    <el-tag :type="envTagType" size="small" class="env-tag">
       {{ envName }}
     </el-tag>
     <el-tooltip content="当前环境配置信息" placement="bottom" v-if="isDev">
-      <el-button type="text" @click="showEnvDetails = true">
+      <el-button class="info-btn" @click="showEnvDetails = true">
         <el-icon><InfoFilled /></el-icon>
       </el-button>
     </el-tooltip>
@@ -68,8 +68,48 @@ const envTagType = computed(() => {
   margin-left: 10px;
 }
 
+.env-tag {
+  border: none;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.info-btn {
+  color: rgba(255, 255, 255, 0.9);
+  padding: 4px;
+  margin-left: 5px;
+  border: none;
+  background: transparent;
+}
+
+.info-btn:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .env-details {
   max-height: 400px;
   overflow-y: auto;
+}
+
+:deep(.el-tag--success) {
+  background-color: rgba(103, 194, 58, 0.2);
+  color: #67c23a;
+}
+
+:deep(.el-tag--warning) {
+  background-color: rgba(230, 162, 60, 0.2);
+  color: #e6a23c;
+}
+
+:deep(.el-tag--danger) {
+  background-color: rgba(245, 108, 108, 0.2);
+  color: #f56c6c;
+}
+
+:deep(.el-tag--info) {
+  background-color: rgba(144, 147, 153, 0.2);
+  color: #909399;
 }
 </style>

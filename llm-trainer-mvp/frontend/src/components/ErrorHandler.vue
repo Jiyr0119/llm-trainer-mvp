@@ -5,7 +5,7 @@
 <script setup>
 import { onErrorCaptured, onMounted, inject } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElNotification } from 'element-plus';
 
 const router = useRouter();
 
@@ -16,7 +16,13 @@ onErrorCaptured((error, instance, info) => {
   console.error('错误信息:', info);
   
   // 显示友好的错误提示
-  ElMessage.error('应用发生错误，请刷新页面或联系管理员');
+  ElNotification({
+    title: '系统错误',
+    message: '应用发生错误，请刷新页面或联系管理员',
+    type: 'error',
+    duration: 5000,
+    position: 'top-right'
+  });
   
   // 对于严重错误，可以重定向到错误页面
   if (error.name === 'ChunkLoadError' || error.message.includes('Failed to fetch dynamically imported module')) {
@@ -34,7 +40,13 @@ onMounted(() => {
     console.error('未处理的Promise错误:', event.reason);
     
     // 显示友好的错误提示
-    ElMessage.error('操作失败，请稍后再试');
+    ElMessage({
+      message: '操作失败，请稍后再试',
+      type: 'error',
+      duration: 3000,
+      showClose: true,
+      grouping: true
+    });
     
     // 阻止默认处理
     event.preventDefault();
@@ -45,7 +57,13 @@ onMounted(() => {
     console.error('全局JavaScript错误:', event.error);
     
     // 显示友好的错误提示
-    ElMessage.error('应用发生错误，请刷新页面');
+    ElNotification({
+      title: '系统错误',
+      message: '应用发生错误，请刷新页面',
+      type: 'error',
+      duration: 5000,
+      position: 'top-right'
+    });
     
     // 阻止默认处理
     event.preventDefault();

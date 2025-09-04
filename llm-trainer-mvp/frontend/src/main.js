@@ -4,6 +4,8 @@ import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 // 导入Element Plus的样式文件
 import 'element-plus/dist/index.css'
+// 导入Element Plus图标
+import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 // 导入根组件App
 import App from './App.vue'
 // 导入路由配置
@@ -15,6 +17,12 @@ import pinia from './store'
 const app = createApp(App)
 // 注册Element Plus插件，使其组件在整个应用中可用
 app.use(ElementPlus)
+
+// 注册所有Element Plus图标组件
+for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+  app.component(key, component)
+}
+
 // 注册路由插件，启用路由功能
 app.use(router)
 // 注册Pinia状态管理

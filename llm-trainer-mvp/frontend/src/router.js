@@ -10,6 +10,7 @@ import ErrorPage from './views/ErrorPage.vue' // 错误页面
 import LoginView from './views/LoginView.vue' // 登录页面
 import RegisterView from './views/RegisterView.vue' // 注册页面
 import ProfileView from './views/ProfileView.vue' // 个人资料页面
+import ForgotPasswordView from './views/ForgotPasswordView.vue' // 忘记密码页面
 
 // 定义路由配置数组
 const routes = [
@@ -29,6 +30,12 @@ const routes = [
     path: '/register',
     name: 'register',
     component: RegisterView,
+    meta: { requiresAuth: false } // 不需要认证
+  },
+  {
+    path: '/forgot-password',
+    name: 'forgot-password',
+    component: ForgotPasswordView,
     meta: { requiresAuth: false } // 不需要认证
   },
   {

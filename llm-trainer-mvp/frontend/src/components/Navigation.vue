@@ -8,29 +8,78 @@
       mode="horizontal" 
       router
     >
+      <!-- Logo和品牌名称 -->
+      <div class="brand">
+        <router-link to="/" class="brand-link">
+          <img src="../assets/logo.svg" alt="LLM Trainer Logo" class="brand-logo" />
+          <span class="brand-name">LLM训练平台</span>
+        </router-link>
+      </div>
+      
       <!-- 各个导航菜单项，index属性对应路由路径 -->
-      <el-menu-item index="/">首页</el-menu-item>
-      <el-menu-item v-if="authStore.isLoggedIn" index="/upload">数据上传</el-menu-item>
-      <el-menu-item v-if="authStore.isLoggedIn" index="/datasets">数据集管理</el-menu-item>
-      <el-menu-item v-if="authStore.isLoggedIn" index="/train">模型训练</el-menu-item>
-      <el-menu-item v-if="authStore.isLoggedIn" index="/predict">模型推理</el-menu-item>
+      <el-menu-item index="/">
+        <el-icon><HomeFilled /></el-icon>
+        <span>首页</span>
+      </el-menu-item>
+      <el-menu-item v-if="authStore.isLoggedIn" index="/upload">
+        <el-icon><Upload /></el-icon>
+        <span>数据上传</span>
+      </el-menu-item>
+      <el-menu-item v-if="authStore.isLoggedIn" index="/datasets">
+        <el-icon><Files /></el-icon>
+        <span>数据集管理</span>
+      </el-menu-item>
+      <el-menu-item v-if="authStore.isLoggedIn" index="/train">
+        <el-icon><CPU /></el-icon>
+        <span>模型训练</span>
+      </el-menu-item>
+      <el-menu-item v-if="authStore.isLoggedIn" index="/predict">
+        <el-icon><DataAnalysis /></el-icon>
+        <span>模型推理</span>
+      </el-menu-item>
       
       <!-- 右侧环境信息 -->
       <div class="flex-spacer"></div>
       
       <!-- 用户未登录时显示登录和注册按钮 -->
       <template v-if="!authStore.isLoggedIn">
-        <el-menu-item index="/login">登录</el-menu-item>
-        <el-menu-item index="/register">注册</el-menu-item>
+        <el-button 
+          class="auth-btn login-btn" 
+          @click="$router.push('/login')"
+        >
+          <el-icon><User /></el-icon>
+          登录
+        </el-button>
+        <el-button 
+          class="auth-btn register-btn" 
+          @click="$router.push('/register')"
+        >
+          <el-icon><Plus /></el-icon>
+          注册
+        </el-button>
       </template>
       
       <!-- 用户已登录时显示用户菜单 -->
       <template v-else>
-        <el-sub-menu index="user-menu">
-          <template #title>{{ authStore.currentUser?.username || '用户' }}</template>
-          <el-menu-item index="/profile">个人资料</el-menu-item>
-          <el-menu-item @click="handleLogout">退出登录</el-menu-item>
-        </el-sub-menu>
+        <el-dropdown trigger="click" class="user-dropdown">
+          <div class="user-info">
+            <el-avatar :size="32" class="user-avatar">{{ authStore.currentUser?.username?.charAt(0).toUpperCase() || 'U' }}</el-avatar>
+            <span class="username">{{ authStore.currentUser?.username || '用户' }}</span>
+            <el-icon><ArrowDown /></el-icon>
+          </div>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item @click="$router.push('/profile')">
+                <el-icon><UserFilled /></el-icon>
+                个人资料
+              </el-dropdown-item>
+              <el-dropdown-item @click="handleLogout">
+                <el-icon><SwitchButton /></el-icon>
+                退出登录
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </template>
       
       <div class="env-info-container">
@@ -98,21 +147,175 @@ onBeforeUnmount(() => {
 <style scoped>
 /* scoped属性确保样式仅应用于当前组件 */
 .navigation {
-  border-bottom: 1px solid #e6e6e6; /* 添加底部边框，提供视觉分隔 */
+  border-bottom: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(to right, rgba(65, 88, 208, 0.95), rgba(200, 80, 192, 0.95));
+  position: sticky;
+  top: 0;
+  z-index: 1000;
 }
 
 .el-menu {
   display: flex;
   align-items: center;
+  height: 64px;
+  padding: 0 20px;
+  border-bottom: none !important;
+  background-color: transparent !important;
+}
+
+.brand {
+  margin-right: 30px;
+  display: flex;
+  align-items: center;
+}
+
+.brand-link {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  color: white;
+  font-weight: 700;
+  font-size: 20px;
+  transition: transform 0.3s ease;
+}
+
+.brand-link:hover {
+  transform: translateY(-2px);
+}
+
+.brand-logo {
+  width: 36px;
+  height: 36px;
+  margin-right: 10px;
+}
+
+.brand-name {
+  font-size: 20px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.el-menu-item {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 16px;
+  font-size: 15px;
+  transition: all 0.3s;
+  color: rgba(255, 255, 255, 0.9) !important;
+  border-bottom: 3px solid transparent !important;
+}
+
+.el-menu-item:hover, .el-menu-item.is-active {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: white !important;
+  border-bottom: 3px solid white !important;
+}
+
+.el-menu-item .el-icon {
+  margin-right: 8px;
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.el-menu-item.is-active .el-icon {
+  color: white !important;
 }
 
 .flex-spacer {
-  flex-grow: 1; /* 占用所有可用空间，将后续元素推到右侧 */
+  flex-grow: 1;
+}
+
+.auth-btn {
+  margin: 0 8px;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  border: none;
+}
+
+.auth-btn .el-icon {
+  margin-right: 6px;
+}
+
+.login-btn {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: white;
+}
+
+.login-btn:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.register-btn {
+  background-color: white;
+  color: #4158D0;
+}
+
+.register-btn:hover {
+  background-color: #f0f0f0;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.user-dropdown {
+  cursor: pointer;
+  margin: 0 10px;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background-color: rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.user-info:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.user-avatar {
+  background: linear-gradient(135deg, #C850C0, #FF6CAB);
+  color: white;
+  font-weight: bold;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+}
+
+.username {
+  margin: 0 8px;
+  font-size: 14px;
+  color: white;
+  font-weight: 500;
 }
 
 .env-info-container {
   display: flex;
   align-items: center;
   padding: 0 15px;
+  margin-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .brand-name,
+  .username {
+    display: none;
+  }
+  
+  .el-menu {
+    padding: 0 10px;
+  }
+  
+  .el-menu-item {
+    padding: 0 10px;
+  }
 }
 </style>
