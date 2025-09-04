@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     
     # 数据库配置
     DATABASE_URL: str = Field(default="sqlite:///../data/database.db", env="DATABASE_URL")
+    # 数据库连接池配置
+    DB_POOL_SIZE: int = Field(default=5, env="DB_POOL_SIZE")
+    DB_MAX_OVERFLOW: int = Field(default=10, env="DB_MAX_OVERFLOW")
+    DB_POOL_TIMEOUT: int = Field(default=30, env="DB_POOL_TIMEOUT")
+    DB_POOL_RECYCLE: int = Field(default=1800, env="DB_POOL_RECYCLE")
     
     # 文件存储配置
     UPLOAD_PATH: str = Field(default="../data/uploads", env="UPLOAD_PATH")
