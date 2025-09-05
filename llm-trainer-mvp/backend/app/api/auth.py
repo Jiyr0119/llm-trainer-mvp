@@ -370,13 +370,28 @@ def refresh_token(refresh_token_data: RefreshTokenRequest, db: Session = Depends
     )
 
 # 获取当前用户信息
-@router.get("/me", response_model=UserResponse)
+@router.get("/me")
 async def read_users_me(current_user: User = Depends(get_current_active_user)):
     """获取当前用户信息"""
-    return current_user
+    # 将用户对象转换为字典
+    user_data = {
+        "username": current_user.username,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "role": current_user.role,
+        "is_active": current_user.is_active,
+        "id": current_user.id,
+        "created_at": current_user.created_at,
+        "last_login": current_user.last_login
+    }
+    return APIResponse.success(
+        data=user_data,
+        message="获取用户信息成功",
+        code=200
+    )
 
 # 更新当前用户信息
-@router.put("/me", response_model=UserResponse)
+@router.put("/me")
 async def update_user_me(user_update: UserUpdate, current_user: User = Depends(get_current_active_user), db: Session = Depends(get_session)):
     """更新当前用户信息"""
     # 更新邮箱
@@ -402,4 +417,20 @@ async def update_user_me(user_update: UserUpdate, current_user: User = Depends(g
     db.add(current_user)
     db.commit()
     db.refresh(current_user)
-    return current_user
+    
+    # 将用户对象转换为字典
+    user_data = {
+        "username": current_user.username,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "role": current_user.role,
+        "is_active": current_user.is_active,
+        "id": current_user.id,
+        "created_at": current_user.created_at,
+        "last_login": current_user.last_login
+    }
+    return APIResponse.success(
+        data=user_data,
+        message="更新用户信息成功",
+        code=200
+    )
