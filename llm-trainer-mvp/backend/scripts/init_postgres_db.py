@@ -16,9 +16,17 @@ import os
 import sys
 import logging
 from pathlib import Path
+from dotenv import load_dotenv
 
 # 添加项目根目录到Python路径
-sys.path.append(str(Path(__file__).parent.parent))
+project_root = str(Path(__file__).parent.parent)
+sys.path.append(project_root)
+
+# 加载.env.dev文件中的环境变量
+env_file = os.path.join(project_root, '.env.dev')
+load_dotenv(env_file)
+print(f"加载环境变量文件: {env_file}")
+print(f"数据库URL环境变量: {os.environ.get('DATABASE_URL', '未设置')}")
 
 # 配置日志
 logging.basicConfig(
