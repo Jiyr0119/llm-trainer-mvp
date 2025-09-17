@@ -45,6 +45,10 @@
         <el-icon><DataAnalysis /></el-icon>
         <span>模型推理</span>
       </el-menu-item>
+      <el-menu-item v-if="authStore.isLoggedIn" index="/chat">
+        <el-icon><ChatDotRound /></el-icon>
+        <span>本地对话</span>
+      </el-menu-item>
       
       <!-- 右侧环境信息 -->
       <div class="flex-spacer"></div>
@@ -103,7 +107,7 @@ import { useRouter, useRoute } from 'vue-router'
 import EnvInfo from './EnvInfo.vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../store/auth'
-import { Setting, HomeFilled, Upload, Files, DataAnalysis, User, Plus, ArrowDown, UserFilled, SwitchButton } from '@element-plus/icons-vue'
+import { Setting, HomeFilled, Upload, Files, DataAnalysis, User, Plus, ArrowDown, UserFilled, SwitchButton, ChatDotRound } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()

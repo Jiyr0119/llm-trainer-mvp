@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = Field(default=1800, env="DB_POOL_RECYCLE")
     
     # 文件存储配置
+    DATA_DIR: str = Field(default="../data", env="DATA_DIR")
     UPLOAD_PATH: str = Field(default="../data/uploads", env="UPLOAD_PATH")
     MODEL_PATH: str = Field(default="../data/models", env="MODEL_PATH")
     LOG_PATH: str = Field(default="../data/logs", env="LOG_PATH")

@@ -7,6 +7,7 @@ import UploadView from './views/UploadView.vue' // 数据上传页面
 import DatasetsView from './views/DatasetsView.vue' // 数据集管理页面
 import TrainingView from './views/TrainingView.vue' // 模型训练页面
 import PredictionView from './views/PredictionView.vue' // 模型推理页面
+import ChatView from './views/ChatView.vue' // 本地语言模型对话页面
 import ErrorPage from './views/ErrorPage.vue' // 错误页面
 import LoginView from './views/LoginView.vue' // 登录页面
 import RegisterView from './views/RegisterView.vue' // 注册页面
@@ -80,6 +81,12 @@ const routes = [
     path: '/predict',
     name: 'predict',
     component: PredictionView,
+    meta: { requiresAuth: true } // 需要认证
+  },
+  {
+    path: '/chat',
+    name: 'chat',
+    component: ChatView,
     meta: { requiresAuth: true } // 需要认证
   },
   {

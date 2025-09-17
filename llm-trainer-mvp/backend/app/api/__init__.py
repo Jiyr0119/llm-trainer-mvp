@@ -7,6 +7,7 @@ from .training import router as training_router
 from .prediction import router as prediction_router
 from .auth import router as auth_router
 from .users import router as users_router
+from .chat import router as chat_router
 
 # 创建主路由器
 api_router = APIRouter()
@@ -17,5 +18,6 @@ api_router.include_router(users_router, tags=["用户管理"])
 api_router.include_router(datasets_router, tags=["数据集管理"])
 api_router.include_router(training_router, tags=["模型训练"])
 api_router.include_router(prediction_router, tags=["模型预测"])
+api_router.include_router(chat_router, tags=["本地对话"])
 
 __all__ = ["api_router"]
