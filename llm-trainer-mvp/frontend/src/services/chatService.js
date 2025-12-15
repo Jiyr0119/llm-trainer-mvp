@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios from './axios';
 import { API_URL } from '../config';
 
 const chatService = {
@@ -104,7 +104,7 @@ const chatService = {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
           },
           body: JSON.stringify({
             model: data.model,

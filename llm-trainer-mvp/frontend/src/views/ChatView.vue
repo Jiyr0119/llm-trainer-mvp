@@ -97,10 +97,10 @@
               :rows="3"
               placeholder="输入您的问题..."
               resize="none"
-              @keydown.enter.ctrl.prevent="sendMessage"
+              @keydown.enter.exact.prevent="sendMessage"
             />
             <div class="input-actions">
-              <span class="hint">按 Ctrl+Enter 发送</span>
+              <span class="hint">按 Enter 发送，Shift+Enter 换行</span>
               <el-button type="primary" :disabled="!userInput.trim() || isGenerating" @click="sendMessage">
                 发送
               </el-button>
@@ -461,6 +461,17 @@ const formatDate = (dateString) => {
   position: relative;
   display: flex;
   flex-direction: column;
+  transition: all 0.3s ease;
+}
+
+.conversation-item:hover {
+  background-color: #f5f7fa;
+  transform: translateX(2px);
+}
+
+.conversation-item.active {
+  background-color: #ecf5ff;
+  border-left: 3px solid #4158D0;
 }
 
 .conversation-item:hover {
@@ -512,6 +523,23 @@ const formatDate = (dateString) => {
   margin-right: 12px;
 }
 
+.model-settings .el-select .el-input__wrapper {
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.model-settings .el-button {
+  border-radius: 8px;
+  padding: 8px 12px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.model-settings .el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
 .model-option {
   display: flex;
   flex-direction: column;
@@ -527,6 +555,25 @@ const formatDate = (dateString) => {
   flex: 1;
   padding: 16px;
   overflow-y: auto;
+  background: linear-gradient(to bottom, #ffffff, #f8f9fa);
+}
+
+.message-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.message-area::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.message-area::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 10px;
+}
+
+.message-area::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
 }
 
 .empty-state {
@@ -551,14 +598,19 @@ const formatDate = (dateString) => {
   padding: 12px 16px;
   border-radius: 8px;
   max-width: calc(100% - 60px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  line-height: 1.5;
 }
 
 .message.user .message-content {
-  background-color: #ecf5ff;
+  background: linear-gradient(135deg, #4158D0, #6C7FD8);
+  color: white;
+  border-bottom-right-radius: 0;
 }
 
 .message.assistant .message-content {
   background-color: #f5f7fa;
+  border-bottom-left-radius: 0;
 }
 
 .error-message {
@@ -569,6 +621,7 @@ const formatDate = (dateString) => {
 .input-area {
   padding: 16px;
   border-top: 1px solid #ebeef5;
+  background-color: #f5f7fa;
 }
 
 .input-actions {
@@ -576,6 +629,23 @@ const formatDate = (dateString) => {
   justify-content: space-between;
   align-items: center;
   margin-top: 8px;
+}
+
+.input-actions .el-button {
+  padding: 8px 20px;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.input-actions .el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.input-actions .el-button:active {
+  transform: translateY(0);
 }
 
 .hint {

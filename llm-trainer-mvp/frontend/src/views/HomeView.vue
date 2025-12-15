@@ -39,6 +39,15 @@
                 <p>实时测试和验证模型效果</p>
               </div>
             </div>
+            <div class="feature-item">
+              <div class="feature-icon chat-icon">
+                <el-icon><ChatDotRound /></el-icon>
+              </div>
+              <div class="feature-text">
+                <h3>本地语言模型对话</h3>
+                <p>与本地部署的小型语言模型进行实时对话</p>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -63,6 +72,10 @@
             <el-icon><DataAnalysis /></el-icon>
             测试模型推理
           </el-button>
+          <el-button @click="goToChat" class="action-btn chat-btn">
+            <el-icon><ChatDotRound /></el-icon>
+            本地模型对话
+          </el-button>
         </div>
       </div>
     </el-card>
@@ -71,7 +84,7 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
-import { Upload, Setting, DataAnalysis } from '@element-plus/icons-vue'
+import { Upload, Setting, DataAnalysis, ChatDotRound } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -85,6 +98,10 @@ function goToTraining() {
 
 function goToPrediction() {
   router.push('/predict')
+}
+
+function goToChat() {
+  router.push('/chat')
 }
 </script>
 
@@ -225,6 +242,10 @@ function goToPrediction() {
   background: linear-gradient(135deg, #C850C0, #FF6CAB);
 }
 
+.chat-icon {
+  background: linear-gradient(135deg, #FF6CAB, #4158D0);
+}
+
 .feature-text h3 {
   font-size: 16px;
   font-weight: 600;
@@ -295,6 +316,15 @@ function goToPrediction() {
 
 .predict-btn:hover {
   background: linear-gradient(135deg, #b745af, #ff5ba0);
+}
+
+.chat-btn {
+  background: linear-gradient(135deg, #FF6CAB, #4158D0);
+  color: white;
+}
+
+.chat-btn:hover {
+  background: linear-gradient(135deg, #ff5ba0, #3a4ec0);
 }
 
 @media (max-width: 768px) {

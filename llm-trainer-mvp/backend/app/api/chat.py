@@ -12,6 +12,7 @@ import torch
 from app.core.config import settings
 from app.api.auth import get_current_active_user
 from app.models import User
+from app.core.decorators import standardized_response
 
 # 创建路由器
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -72,7 +73,7 @@ class ModelSettings(BaseModel):
     settings: dict
 
 # 模拟数据存储
-MODELS = [
+STATIC_MODELS = [
     {
         "id": "qwen-1.5-0.5b",
         "name": "Qwen-1.5-0.5B-Chat",
@@ -102,6 +103,34 @@ MODELS = [
         "created_at": datetime.now().isoformat()
     }
 ]
+
+# 动态获取已下载的模型
+def get_available_models():
+    """获取可用的模型列表，包括静态模型和已下载的模型"""
+    import os
+    from app.core.config import settings
+    
+    # 获取已下载的模型
+    downloaded_models = []
+    model_dir = settings.MODEL_PATH
+    
+    if os.path.exists(model_dir):
+        for model_folder in os.listdir(model_dir):
+            model_path = os.path.join(model_dir, model_folder)
+            if os.path.isdir(model_path):
+                # 检查是否是有效的模型目录（包含config.json）
+                config_path = os.path.join(model_path, "config.json")
+                if os.path.exists(config_path):
+                    downloaded_models.append({
+                        "id": model_folder,
+                        "name": model_folder,
+                        "description": f"已下载的本地模型: {model_folder}",
+                        "max_tokens": 2048,
+                        "created_at": datetime.now().isoformat()
+                    })
+    
+    # 合并静态模型和已下载的模型
+    return downloaded_models + STATIC_MODELS
 
 # 数据存储路径
 CONVERSATIONS_DIR = os.path.join(settings.DATA_DIR, "conversations")
@@ -424,14 +453,16 @@ async def generate_stream_response(model: str, messages: List[Message], temperat
 
 # API路由
 @router.get("/models", response_model=dict)
+@standardized_response("获取模型列表成功")
 async def get_models(current_user: User = Depends(get_current_active_user)):
     """获取可用的语言模型列表"""
-    return {"models": MODELS}
+    return {"models": get_available_models()}
 
 @router.get("/conversations", response_model=dict)
+@standardized_response("获取对话列表成功")
 async def get_conversations(current_user: User = Depends(get_current_active_user)):
     """获取用户的对话列表"""
-    conversations = list_conversations(current_user.id)
+    conversations = list_conversations(current_user.id if current_user.id is not None else 0)
     return {"conversations": conversations}
 
 @router.post("/conversations", response_model=Conversation)
@@ -452,7 +483,7 @@ async def create_conversation(
         "messages": []
     }
     
-    save_conversation(current_user.id, conversation_id, new_conversation)
+    save_conversation(current_user.id if current_user.id is not None else 0, conversation_id, new_conversation)
     
     return {
         "id": conversation_id,
@@ -468,7 +499,7 @@ async def get_conversation(
     current_user: User = Depends(get_current_active_user)
 ):
     """获取特定对话的详细信息"""
-    conversation = load_conversation(current_user.id, conversation_id)
+    conversation = load_conversation(current_user.id if current_user.id is not None else 0, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
@@ -481,7 +512,7 @@ async def update_conversation(
     current_user: User = Depends(get_current_active_user)
 ):
     """更新对话信息"""
-    conversation = load_conversation(current_user.id, conversation_id)
+    conversation = load_conversation(current_user.id if current_user.id is not None else 0, conversation_id)
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
@@ -489,7 +520,7 @@ async def update_conversation(
         conversation["title"] = update_data.title
     
     conversation["updated_at"] = datetime.now().isoformat()
-    save_conversation(current_user.id, conversation_id, conversation)
+    save_conversation(current_user.id if current_user.id is not None else 0, conversation_id, conversation)
     
     return {
         "id": conversation["id"],
@@ -505,7 +536,7 @@ async def delete_conversation_endpoint(
     current_user: User = Depends(get_current_active_user)
 ):
     """删除对话"""
-    success = delete_conversation(current_user.id, conversation_id)
+    success = delete_conversation(current_user.id if current_user.id is not None else 0, conversation_id)
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found")
     
@@ -519,7 +550,8 @@ async def create_chat_completion(
 ):
     """创建聊天完成"""
     # 验证模型是否存在
-    model_exists = any(m["id"] == request.model for m in MODELS)
+    available_models = get_available_models()
+    model_exists = any(m["id"] == request.model for m in available_models)
     if not model_exists:
         raise HTTPException(status_code=400, detail=f"Model {request.model} not found")
     
