@@ -9,9 +9,10 @@ const chatService = {
   async getModels() {
     try {
       const response = await axios.get(`${API_URL}/chat/models`);
+      console.log('[ChatService] Get models response:', response.data);
       return response.data.models || [];
     } catch (error) {
-      console.error('获取模型列表失败:', error);
+      console.error('[ChatService] Get models failed:', error);
       throw error;
     }
   },
@@ -23,9 +24,10 @@ const chatService = {
   async getConversations() {
     try {
       const response = await axios.get(`${API_URL}/chat/conversations`);
+      console.log('[ChatService] Get conversations response:', response.data);
       return response.data.conversations || [];
     } catch (error) {
-      console.error('获取对话列表失败:', error);
+      console.error('[ChatService] Get conversations failed:', error);
       throw error;
     }
   },
@@ -37,10 +39,12 @@ const chatService = {
    */
   async createConversation(data) {
     try {
+      console.log('[ChatService] Creating conversation:', data);
       const response = await axios.post(`${API_URL}/chat/conversations`, data);
+      console.log('[ChatService] Create conversation response:', response.data);
       return response.data;
     } catch (error) {
-      console.error('创建对话失败:', error);
+      console.error('[ChatService] Create conversation failed:', error);
       throw error;
     }
   },
@@ -52,10 +56,12 @@ const chatService = {
    */
   async getConversationMessages(conversationId) {
     try {
+      console.log('[ChatService] Getting messages for conversation:', conversationId);
       const response = await axios.get(`${API_URL}/chat/conversations/${conversationId}`);
+      console.log('[ChatService] Get messages response:', response.data);
       return response.data.messages || [];
     } catch (error) {
-      console.error('获取对话消息失败:', error);
+      console.error('[ChatService] Get messages failed:', error);
       throw error;
     }
   },
@@ -68,10 +74,12 @@ const chatService = {
    */
   async updateConversation(conversationId, data) {
     try {
+      console.log('[ChatService] Updating conversation:', conversationId, data);
       const response = await axios.patch(`${API_URL}/chat/conversations/${conversationId}`, data);
+      console.log('[ChatService] Update conversation response:', response.data);
       return response.data;
     } catch (error) {
-      console.error('更新对话失败:', error);
+      console.error('[ChatService] Update conversation failed:', error);
       throw error;
     }
   },
@@ -83,75 +91,107 @@ const chatService = {
    */
   async deleteConversation(conversationId) {
     try {
+      console.log('[ChatService] Deleting conversation:', conversationId);
       await axios.delete(`${API_URL}/chat/conversations/${conversationId}`);
+      console.log('[ChatService] Delete conversation success');
     } catch (error) {
-      console.error('删除对话失败:', error);
+      console.error('[ChatService] Delete conversation failed:', error);
       throw error;
     }
   },
 
   /**
-   * 发送消息并获取回复
+   * 发送消息并获取流式回复
    * @param {Object} data 消息数据
    * @param {Function} onStream 流式输出回调函数
    * @returns {Promise<Object>} 模型回复
    */
   async sendMessage(data, onStream = null) {
     try {
-      // 如果提供了流式输出回调，使用流式输出
-      if (onStream) {
-        const response = await fetch(`${API_URL}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-          },
-          body: JSON.stringify({
-            model: data.model,
-            messages: data.messages.map(m => ({
-              role: m.role,
-              content: m.content
-            })),
-            temperature: data.temperature,
-            max_tokens: data.max_tokens,
-            stream: true
-          })
-        });
+      console.log('[ChatService] Sending message:', {
+        model: data.model,
+        messageCount: data.messages.length,
+        stream: data.stream
+      });
 
-        if (!response.ok) {
+      if (!onStream || !data.stream) {
+        throw new Error('Stream mode is required. Please provide onStream callback.');
+      }
+
+      const response = await fetch(`${API_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        },
+        body: JSON.stringify({
+          model: data.model,
+          messages: data.messages.map(m => ({
+            role: m.role,
+            content: m.content
+          })),
+          temperature: data.temperature || 0.7,
+          max_tokens: data.max_tokens || 2048,
+          stream: true
+        })
+      });
+
+      if (!response.ok) {
+        let errorMessage = 'Failed to send message';
+        try {
           const errorData = await response.json();
-          throw new Error(errorData.detail || '发送消息失败');
+          errorMessage = errorData.detail || errorData.message || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
+        throw new Error(errorMessage);
+      }
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let buffer = '';
-        let fullResponse = '';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      let fullResponse = '';
+      let hadError = false;
 
+      try {
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
-          
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+          if (done) {
+            console.log('[ChatService] Stream completed');
+            break;
+          }
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
-              
-              try {
-                const json = JSON.parse(data);
-                if (json.choices && json.choices[0].delta) {
-                  const delta = json.choices[0].delta;
-                  if (delta.content) {
-                    fullResponse += delta.content;
-                    onStream(delta.content, fullResponse);
-                  }
+          buffer += decoder.decode(value, { stream: true });
+
+          // SSE协议: 使用双换行符分隔事件
+          const events = buffer.split('\n\n');
+          buffer = events.pop() || ''; // 保留未完成的部分
+
+          for (const event of events) {
+            const lines = event.split('\n');
+            for (const line of lines) {
+              if (!line.trim()) continue;
+
+              if (line.startsWith('data: ')) {
+                const dataStr = line.slice(6).trim();
+                if (dataStr === '[DONE]') {
+                  console.log('[ChatService] Received [DONE]');
+                  continue;
                 }
-              } catch (e) {
-                console.error('解析流式输出失败:', e);
+
+                try {
+                  const json = JSON.parse(dataStr);
+
+                  if (json.choices && json.choices.length > 0) {
+                    const delta = json.choices[0].delta;
+                    if (delta && delta.content) {
+                      fullResponse += delta.content;
+                      onStream(delta.content, fullResponse);
+                    }
+                  }
+                } catch (e) {
+                  console.warn('[ChatService] Failed to parse JSON:', dataStr, e);
+                }
               }
             }
           }
@@ -160,33 +200,21 @@ const chatService = {
         return {
           id: `chatcmpl-${Date.now()}`,
           model: data.model,
-          choices: [
-            {
-              message: {
-                role: 'assistant',
-                content: fullResponse
-              },
-              finish_reason: 'stop'
-            }
-          ],
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: fullResponse
+            },
+            finish_reason: 'stop'
+          }],
           created: Math.floor(Date.now() / 1000)
         };
-      } else {
-        // 非流式输出
-        const response = await axios.post(`${API_URL}/chat/completions`, {
-          model: data.model,
-          messages: data.messages.map(m => ({
-            role: m.role,
-            content: m.content
-          })),
-          temperature: data.temperature,
-          max_tokens: data.max_tokens,
-          stream: false
-        });
-        return response.data;
+      } catch (streamError) {
+        console.error('[ChatService] Stream processing error:', streamError);
+        throw streamError;
       }
     } catch (error) {
-      console.error('发送消息失败:', error);
+      console.error('[ChatService] Send message failed:', error);
       throw error;
     }
   },
@@ -198,13 +226,12 @@ const chatService = {
    */
   async updateModelSettings(data) {
     try {
-      const response = await axios.patch(`${API_URL}/chat/models/settings`, {
-        model: data.model,
-        settings: data.settings
-      });
+      console.log('[ChatService] Updating model settings:', data);
+      const response = await axios.patch(`${API_URL}/chat/models/settings`, data);
+      console.log('[ChatService] Update settings response:', response.data);
       return response.data;
     } catch (error) {
-      console.error('更新模型设置失败:', error);
+      console.error('[ChatService] Update settings failed:', error);
       throw error;
     }
   }
