@@ -1,0 +1,24 @@
+{
+  "name": "frontend-nuxt",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@nuxt/ui": "^4.2.1",
+    "@vueuse/core": "^14.1.0",
+    "@vueuse/nuxt": "^14.1.0",
+    "axios": "^1.13.2",
+    "highlight.js": "^11.11.1",
+    "marked": "^17.0.1",
+    "nuxt": "^4.2.2",
+    "sass": "^1.97.0",
+    "vue": "^3.5.25",
+    "vue-router": "^4.6.4"
+  }
+}
